@@ -1,0 +1,23 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+
+# Local env files — hold live Neon credentials (.env.example stays tracked)
+.env
+.env*.local
+
+# Prisma generated client
+lib/generated/
+
+# Uploaded photos (local storage)
+data/uploads/
+
+# Claude Code local session/tooling state
+.claude/
+
+*.tsbuildinfo
+next-env.d.ts
+coverage/
+.DS_Store

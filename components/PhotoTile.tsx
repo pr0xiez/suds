@@ -1,0 +1,70 @@
+import clsx from 'clsx'
+import { deletePhotoAction, setPhotoKindAction } from '@/app/actions/photos'
+import { ConfirmSubmit } from '@/components/ConfirmSubmit'
+import { PhotoKindBadge } from '@/components/ui'
+import type { PhotoKind } from '@/lib/generated/prisma/enums'
+
+const KINDS: Array<{ kind: PhotoKind; short: string; title: string }> = [
+  { kind: 'BEFORE', short: 'B', title: 'Mark as before' },
+  { kind: 'AFTER', short: 'A', title: 'Mark as after' },
+  { kind: 'OTHER', short: 'O', title: 'Mark as other' },
+]
+
+export function PhotoTile({
+  photo,
+  back,
+  footer,
+}: {
+  photo: { id: string; kind: PhotoKind; originalName: string }
+  /** Path to land on after a mutation — usually the page the tile is on. */
+  back: string
+  footer?: React.ReactNode
+}) {
+  return (
+    <figure className="group relative overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+      <img
+        src={`/api/photos/${photo.id}`}
+        alt={photo.originalName || 'Job photo'}
+        className="aspect-square w-full object-cover"
+        loading="lazy"
+      />
+      <div className="absolute left-1.5 top-1.5">
+        <PhotoKindBadge kind={photo.kind} />
+      </div>
+      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-1 bg-gradient-to-t from-black/60 to-transparent p-1.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+        <span className="flex gap-1">
+          {KINDS.map(({ kind, short, title }) => (
+            <form key={kind} action={setPhotoKindAction}>
+              <input type="hidden" name="id" value={photo.id} />
+              <input type="hidden" name="kind" value={kind} />
+              <input type="hidden" name="back" value={back} />
+              <button
+                type="submit"
+                title={title}
+                className={clsx(
+                  'h-6 w-6 rounded text-[10px] font-bold',
+                  photo.kind === kind
+                    ? 'bg-white text-slate-900'
+                    : 'bg-white/25 text-white hover:bg-white/50',
+                )}
+              >
+                {short}
+              </button>
+            </form>
+          ))}
+        </span>
+        <form action={deletePhotoAction}>
+          <input type="hidden" name="id" value={photo.id} />
+          <input type="hidden" name="back" value={back} />
+          <ConfirmSubmit
+            message="Delete this photo? Posts using it lose it too."
+            className="h-6 w-6 rounded bg-white/25 text-[11px] font-bold text-white hover:bg-rose-500"
+          >
+            ×
+          </ConfirmSubmit>
+        </form>
+      </div>
+      {footer}
+    </figure>
+  )
+}

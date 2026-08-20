@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  background: #f1f5f9;
+  color: #0f172a;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Wide content scrolls in its own box; the page never scrolls sideways. */
+body {
+  overflow-x: hidden;
+}
+
+@media print {
+  .no-print {
+    /* biome-ignore lint/complexity/noImportantStyles: must beat utility-class specificity when printing */
+    display: none !important;
+  }
+  body {
+    background: #ffffff;
+  }
+}

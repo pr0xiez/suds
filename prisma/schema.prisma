@@ -1,0 +1,268 @@
+// suds — job + social manager for a car detailing shop.
+//
+// Single-business app: no tenancy, one Settings row (id = 1). Money is always
+// integer cents. Times are stored UTC and rendered in the business timezone
+// (Settings.timezone) through lib/dates.ts — never with the server's local zone.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+// Prisma 7 moved connection URLs out of the schema. The CLI (migrate) reads its
+// URL from prisma.config.ts; the runtime client is constructed with a driver
+// adapter in lib/db/client.ts and never sees a URL here.
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  OWNER
+  STAFF
+}
+
+enum JobStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  VENMO
+  CASHAPP
+  ZELLE
+  OTHER
+}
+
+enum ServiceCategory {
+  EXTERIOR
+  INTERIOR
+  FULL
+  ADDON
+}
+
+enum PhotoKind {
+  BEFORE
+  AFTER
+  OTHER
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  POSTED
+}
+
+enum Platform {
+  INSTAGRAM
+  FACEBOOK
+  TIKTOK
+  GOOGLE_BUSINESS
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String
+  passwordHash String
+  role         Role      @default(STAFF)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  sessions     Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  /// sha256 of the cookie token — the raw token never touches the database.
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+// ---------------------------------------------------------------------------
+// Business settings — a singleton row with id 1, read through lib/ops/settings.ts
+// ---------------------------------------------------------------------------
+
+model Settings {
+  id                Int    @id @default(1)
+  businessName      String @default("Suds Auto Detailing")
+  phone             String @default("")
+  email             String @default("")
+  address           String @default("")
+  city              String @default("")
+  timezone          String @default("America/New_York")
+  instagramHandle   String @default("")
+  facebookPage      String @default("")
+  tiktokHandle      String @default("")
+  googleReviewUrl   String @default("")
+  /// Default hashtag bank appended to suggested captions, space-separated.
+  hashtags          String @default("")
+  /// Next invoice number to hand out; incremented atomically in ensureInvoice.
+  nextInvoiceNumber Int    @default(1001)
+}
+
+// ---------------------------------------------------------------------------
+// Customers & vehicles
+// ---------------------------------------------------------------------------
+
+model Customer {
+  id        String    @id @default(cuid())
+  name      String
+  phone     String    @default("")
+  email     String    @default("")
+  address   String    @default("")
+  notes     String    @default("")
+  createdAt DateTime  @default(now())
+  vehicles  Vehicle[]
+  jobs      Job[]
+}
+
+model Vehicle {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  year       Int?
+  make       String
+  model      String
+  color      String   @default("")
+  plate      String   @default("")
+  notes      String   @default("")
+  createdAt  DateTime @default(now())
+  jobs       Job[]
+}
+
+// ---------------------------------------------------------------------------
+// Service catalog
+// ---------------------------------------------------------------------------
+
+model Service {
+  id          String          @id @default(cuid())
+  name        String
+  description String          @default("")
+  category    ServiceCategory @default(EXTERIOR)
+  priceCents  Int
+  durationMin Int
+  active      Boolean         @default(true)
+  sort        Int             @default(0)
+  jobItems    JobItem[]
+}
+
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
+
+model Job {
+  id            String         @id @default(cuid())
+  customerId    String
+  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  vehicleId     String
+  vehicle       Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  status        JobStatus      @default(SCHEDULED)
+  scheduledAt   DateTime
+  durationMin   Int
+  notes         String         @default("")
+  internalNotes String         @default("")
+  completedAt   DateTime?
+  // Payment — a job is "paid" when paidAt is set.
+  paidAt        DateTime?
+  paymentMethod PaymentMethod?
+  tipCents      Int            @default(0)
+  discountCents Int            @default(0)
+  // Invoice — assigned once by ensureInvoice, then stable.
+  invoiceNumber Int?           @unique
+  invoicedAt    DateTime?
+  createdAt     DateTime       @default(now())
+  items         JobItem[]
+  photos        Photo[]
+  posts         SocialPost[]
+
+  @@index([scheduledAt])
+  @@index([status])
+}
+
+/// A line on a job: a snapshot of a catalog service at booking time, or a custom
+/// one-off line (serviceId null). Prices and durations never reach back into the
+/// catalog — editing a service later must not change past jobs.
+model JobItem {
+  id          String   @id @default(cuid())
+  jobId       String
+  job         Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  serviceId   String?
+  service     Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  name        String
+  priceCents  Int
+  durationMin Int
+  sort        Int      @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Photos — the content library. Files live under data/uploads/ (gitignored),
+// rows carry the metadata. jobId is optional: standalone library uploads exist.
+// ---------------------------------------------------------------------------
+
+model Photo {
+  id           String      @id @default(cuid())
+  jobId        String?
+  job          Job?        @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  kind         PhotoKind   @default(OTHER)
+  /// Stored file name on disk: `${id}.${ext}` — validated, never user input.
+  filename     String
+  originalName String      @default("")
+  contentType  String
+  bytes        Int
+  width        Int?
+  height       Int?
+  createdAt    DateTime    @default(now())
+  postPhotos   PostPhoto[]
+}
+
+// ---------------------------------------------------------------------------
+// Social
+// ---------------------------------------------------------------------------
+
+model SocialPost {
+  id           String      @id @default(cuid())
+  caption      String      @default("")
+  platforms    Platform[]
+  status       PostStatus  @default(DRAFT)
+  scheduledFor DateTime?
+  postedAt     DateTime?
+  jobId        String?
+  job          Job?        @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
+  photos       PostPhoto[]
+
+  @@index([status, scheduledFor])
+}
+
+model PostPhoto {
+  postId  String
+  post    SocialPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  photoId String
+  photo   Photo      @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  sort    Int        @default(0)
+
+  @@id([postId, photoId])
+}
+
+model CaptionTemplate {
+  id        String   @id @default(cuid())
+  name      String
+  /// Body with {{tokens}} — see lib/captions.ts for the token list.
+  body      String
+  createdAt DateTime @default(now())
+}

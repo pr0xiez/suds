@@ -4,11 +4,13 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": "24.x"
   },
   "scripts": {
+    "demo:prepare": "node scripts/prepare-demo.mjs",
+    "demo": "node scripts/demo.mjs",
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && next build --webpack",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
@@ -16,16 +18,23 @@
     "lint:fix": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "tsx --env-file=.env scripts/smoke.ts",
+    "smoke": "node --env-file-if-exists=.env --import tsx scripts/smoke.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "db:seed": "tsx --env-file=.env prisma/seed.ts",
-    "db:reset": "prisma migrate reset --force"
+    "db:seed": "node --env-file-if-exists=.env --import tsx prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force",
+    "smoke:launch": "node --env-file-if-exists=.env --import tsx scripts/smoke-launch.ts",
+    "smoke:auth": "node --env-file-if-exists=.env --import tsx scripts/smoke-auth.ts",
+    "preflight": "node --import tsx scripts/preflight.ts",
+    "worker": "node --env-file-if-exists=.env --import tsx scripts/worker.ts",
+    "worker:loop": "node --env-file-if-exists=.env --import tsx scripts/worker-loop.ts",
+    "backup": "node scripts/backup.mjs",
+    "media:migrate": "node --env-file-if-exists=.env --import tsx scripts/migrate-media.ts"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "node --import tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.0.0",

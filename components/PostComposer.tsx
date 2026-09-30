@@ -1,6 +1,7 @@
 'use client'
 
 import clsx from 'clsx'
+import Link from 'next/link'
 import { useActionState, useState } from 'react'
 import { type FormState, savePostAction } from '@/app/actions/social'
 import { ErrorBanner } from '@/components/banners'
@@ -86,6 +87,13 @@ export function PostComposer({
 
   return (
     <form action={formAction} className="space-y-6">
+      <p className="text-sm text-slate-500">
+        Making a Reel or Short?{' '}
+        <Link href="/social/shorts" className="font-medium text-cyan-700 underline">
+          Edit a video or turn job photos into a short
+        </Link>{' '}
+        before publishing.
+      </p>
       <input type="hidden" name="postId" value={initial.postId} />
       <input type="hidden" name="jobId" value={initial.jobId} />
       <input type="hidden" name="photoIds" value={JSON.stringify(photoIds)} />

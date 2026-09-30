@@ -1,85 +1,92 @@
-# 🫧 Suds
+# Suds
 
-**wash · work · post** — job management and social-media management for a car
-detailing business, in one app. The two halves feed each other: every job
-collects before/after photos, and one click turns a finished job into a draft
-post with the money shots ordered, a caption suggested, and your hashtag bank
-appended.
+Suds helps a solo mobile detailer launch a business, accept customer bookings,
+manage the resulting jobs, and prepare marketing from approved photos and clips.
+Owners and customers have separate interfaces and permissions.
 
-## What it does
+Source: private [pr0xiez/suds](https://github.com/pr0xiez/suds). Hosting uses the
+existing Vercel `suds` project, Node 24, and Neon Postgres. Cloudflare R2 Standard
+is the selected private media store. See [launch setup and status](docs/launch.md)
+for configured services and remaining connections.
 
-**Run the shop**
+Try the full local demo with `npm run demo:prepare` followed by `npm run demo`,
+then open http://localhost:4184/demo. The guided tour has fictional owner,
+customer and staff logins, sample work, an email inbox, simulated marketing,
+and a photo/video editing workflow preview. See [demo details](docs/full-demo.md).
 
-- Customers and their vehicles, with notes ("two golden retrievers — expect
-  pet hair")
-- A service catalog with prices, durations, and categories; one-off custom
-  lines and discounts per job
-- A week-view schedule — overlapping jobs sit side by side, click an empty
-  slot to book it
-- Job lifecycle: scheduled → in progress → completed (plus canceled / no-show),
-  with guarded transitions
-- Before/after photo capture on every job
-- Payments (cash/card/Venmo/Cash App/Zelle, tips) and printable invoices with
-  stable invoice numbers
-- A dashboard that surfaces what needs you: today's runsheet, month revenue,
-  unpaid completed jobs, and finished jobs with no photos yet
+## Built in this version
 
-**Run the socials**
+- Business signup, email verification, recovery, accepted staff invitations,
+  and memberships. Existing shop records migrate into `suds-legacy`.
+- Owner setup: services, business timezone, mobile service area, working hours,
+  booking policy, and a published `/b/[slug]` booking page.
+- Instant bookings by default or owner approval by business choice. Calendar
+  locks protect the full duration and travel buffer against competing bookings.
+- A separate `/portal` for verified customers: appointments, cancellation,
+  rescheduling, vehicles, and customer-facing invoices. Existing customer history
+  links only through an explicit verified invitation.
+- The existing owner schedule, customer records, job progress, payments,
+  printable invoices, photo library, composer, and content calendar.
+- Interactive marketing tasks in `/marketing`: show a completed job, advertise
+  an open appointment, or introduce the business. The hosted assistant produces
+  editable drafts using business data and approved media, with saved run history.
+- Photo-to-short rendering through Shotstack and uploaded video editing through
+  Submagic. Private direct browser uploads and retained rendered output use
+  an S3-compatible storage adapter suitable for Cloudflare R2.
+- Persisted AI jobs, quotas, transactional email outbox, background worker,
+  health endpoint, launch preflight, CI workflow, container recipe, and backup
+  command. Provider connections stay disabled until configured.
 
-- A photo library fed automatically by job uploads
-- A composer: pick photos (click order = carousel order), write or template a
-  caption with live character count, choose platforms, schedule it
-- Caption templates with `{{vehicle}}`-style tokens, plus deterministic
-  caption suggestions built from the job
-- A month content calendar and a queue (drafts / up next / **overdue**)
-- A posting kit per post: copy caption, download photos, open the platform,
-  then "Mark posted"
+Social publication remains manual: review, copy or download, post from your
+social account, then mark posted. Online payment collection, SMS, native apps,
+route optimization, and multi-operator scheduling are later work.
 
-> **Honest scope:** Suds does not publish to Instagram/Facebook/TikTok APIs
-> (Meta's app-review process makes that a project of its own). It is the
-> planning, queueing, and content-production half — the part that actually
-> saves time — with a fast manual publish flow.
+The [interactive concept](docs/product-preview.html) is still available with
+fictional local records. It is separate from the real application described here.
+See the [product scope](docs/product-plan.md), [launch runbook](docs/launch.md),
+and [storage comparison](docs/media-storage.md).
+The [verification record](docs/verification.md) includes screenshots of the
+working application and distinguishes completed checks from live setup.
 
-## Stack
+## Run locally
 
-Next.js 16 (App Router, Server Actions) · Prisma 7 + Neon Postgres ·
-Tailwind CSS v4 · Biome · Vitest. Zero native modules — runs in a
-compiler-less environment by design (scrypt auth, hand-parsed image headers,
-hand-rolled PNG encoder for seed photos).
-
-## Getting started
+Use Linux-native Node 24 under WSL. No native compiler is required.
 
 ```bash
 nvm use
-npm install
-cp .env.example .env    # add your Neon URLs (see AGENTS.md)
+npm ci
+cp .env.example .env
+# Configure DATABASE_URL and DIRECT_URL for a disposable development database.
 npm run db:generate
-npm run db:migrate      # migrates, then seeds a demo shop
+npm run db:deploy
 npm run dev
 ```
 
-Sign in at `http://localhost:3000/login` as `owner@suds.local` (the seed
-prints the password — `SEED_OWNER_PASSWORD` or the dev default).
+Open `http://localhost:3000/signup` for a new owner account. Verification links
+are queued for the configured email worker; credentials are server-only.
+A destructive demo seed is optional and requires
+`ALLOW_DESTRUCTIVE_DEMO_SEED=yes`; never seed a shared or live database.
 
-## Checks
+## Verify
 
 ```bash
-npm test          # 54 unit tests (money, timezones incl. DST, calendar lanes,
-                  # captions, image parsing, auth)
+npm test
 npm run typecheck
-npm run lint
+npm run lint:ci
 npm run build
-npm run smoke     # end-to-end ops against the real DB — books a job, walks the
-                  # lifecycle, uploads photos, builds a post, cleans up
+npm run smoke
+npm run smoke:launch
+npm run smoke:auth
 ```
 
-## Ideas for later
+The database smoke scripts create only their own fixture businesses and clean
+up those records. They do not reset existing data. Set the database connection
+explicitly before running them.
 
-- Stripe payments / deposits (SqFt next door already does Stripe Connect)
-- SMS reminders (Twilio) and review-request automation
-- Direct publishing via Meta's Graph API once app review is worth it
-- Recurring maintenance plans (monthly wash memberships)
-- Object storage for photos before any serverless deploy
+Production setup requires private object storage, transactional email,
+editing and model credentials, HTTPS, and a scheduled or persistent worker.
+`npm run preflight` reports missing configuration without printing secrets.
+See [AGENTS.md](AGENTS.md) and [CONTEXT.md](CONTEXT.md) before changing the app.
 
-See `AGENTS.md` for the working notes: environment constraints, invariants,
-and the gotchas that will bite you first.
+Stack: Next.js 16, Prisma 7/Postgres, Tailwind v4, Biome, Vitest, built-in scrypt,
+header-parsed images, and HTTP provider adapters.

@@ -6,6 +6,8 @@
       "**",
       "!node_modules",
       "!.next",
+      "!.vercel",
+      "!.backups",
       "!lib/generated",
       "!data",
       "!prisma/migrations",

@@ -83,15 +83,17 @@ function readJobInput(fd: FormData, timezone: string): JobInput {
 
 /** Create/update from the JobForm client component (useActionState). */
 export async function saveJobAction(_prev: FormState | null, fd: FormData): Promise<FormState> {
-  await requireUser()
-  const settings = await getSettings()
+  const user = await requireUser()
+  const settings = await getSettings(user.businessId)
   const jobId = fdString(fd, 'jobId')
   let savedId: string
   try {
     const input = readJobInput(fd, settings.timezone)
     if (!input.customerId) return { error: 'Pick a customer' }
     if (!input.vehicleId) return { error: 'Pick a vehicle' }
-    const job = jobId ? await updateJob(jobId, input) : await createJob(input)
+    const job = jobId
+      ? await updateJob(user.businessId, jobId, input)
+      : await createJob(user.businessId, input)
     savedId = job.id
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -104,13 +106,13 @@ export async function saveJobAction(_prev: FormState | null, fd: FormData): Prom
 }
 
 export async function setJobStatusAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const id = fdString(fd, 'id')
   const status = z.enum(JOB_STATUSES).parse(fdString(fd, 'status'))
   const back = safeBackPath(fdString(fd, 'back'), `/jobs/${id}`)
   let error: string | null = null
   try {
-    await setJobStatus(id, status)
+    await setJobStatus(user.businessId, id, status)
   } catch (err) {
     error = friendlyError(err)
   }
@@ -119,7 +121,7 @@ export async function setJobStatusAction(fd: FormData): Promise<void> {
 }
 
 export async function recordPaymentAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const id = fdString(fd, 'id')
   const method = z.enum(PAYMENT_METHODS).parse(fdString(fd, 'method'))
   const tipRaw = fdString(fd, 'tip').trim()
@@ -129,7 +131,7 @@ export async function recordPaymentAction(fd: FormData): Promise<void> {
     error = 'Enter a tip like 20 or 12.50'
   } else {
     try {
-      await recordPayment(id, { method, tipCents })
+      await recordPayment(user.businessId, id, { method, tipCents })
     } catch (err) {
       error = friendlyError(err)
     }
@@ -139,32 +141,32 @@ export async function recordPaymentAction(fd: FormData): Promise<void> {
 }
 
 export async function clearPaymentAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const id = fdString(fd, 'id')
-  await clearPayment(id)
+  await clearPayment(user.businessId, id)
   revalidatePath('/', 'layout')
   redirect(`/jobs/${id}`)
 }
 
 export async function generateInvoiceAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const id = fdString(fd, 'id')
-  await ensureInvoice(id)
+  await ensureInvoice(user.businessId, id)
   revalidatePath('/', 'layout')
   redirect(`/jobs/${id}/invoice`)
 }
 
 export async function deleteJobAction(fd: FormData): Promise<void> {
-  await requireUser()
-  await deleteJob(fdString(fd, 'id'))
+  const user = await requireUser()
+  await deleteJob(user.businessId, fdString(fd, 'id'))
   revalidatePath('/', 'layout')
   redirect('/jobs')
 }
 
 /** The job → social bridge: builds a draft post and lands in the composer. */
 export async function createPostFromJobAction(fd: FormData): Promise<void> {
-  await requireUser()
-  const post = await createPostFromJob(fdString(fd, 'id'))
+  const user = await requireUser()
+  const post = await createPostFromJob(user.businessId, fdString(fd, 'id'))
   revalidatePath('/', 'layout')
   redirect(`/social/${post.id}`)
 }

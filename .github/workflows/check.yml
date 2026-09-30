@@ -1,0 +1,40 @@
+name: Check Suds
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: suds
+          POSTGRES_PASSWORD: suds-ci-only
+          POSTGRES_DB: suds
+        ports: [5432:5432]
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://suds:suds-ci-only@localhost:5432/suds
+      DIRECT_URL: postgresql://suds:suds-ci-only@localhost:5432/suds
+      NEXT_TELEMETRY_DISABLED: '1'
+      PUBLIC_APP_URL: https://suds.example.test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run db:generate
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run lint:ci
+      - run: npm run build
+      - run: npm run db:deploy
+      - run: npm run smoke
+      - run: npm run smoke:launch
+      - run: npm run smoke:auth

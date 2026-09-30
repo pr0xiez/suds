@@ -25,12 +25,12 @@ function validTimezone(tz: string): boolean {
 }
 
 export async function updateSettingsAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireOwner()
   const timezone = fdString(fd, 'timezone').trim() || 'America/New_York'
   if (!validTimezone(timezone)) {
     redirect(`/settings?error=${encodeURIComponent(`Unknown timezone: ${timezone}`)}`)
   }
-  await updateSettings({
+  await updateSettings(user.businessId, {
     businessName: fdString(fd, 'businessName').trim().slice(0, 200),
     phone: fdString(fd, 'phone').trim().slice(0, 50),
     email: fdString(fd, 'email').trim().slice(0, 200),
@@ -86,18 +86,20 @@ async function runServicesMutation(mutate: () => Promise<unknown>): Promise<void
 }
 
 export async function createServiceAction(fd: FormData): Promise<void> {
-  await requireUser()
-  await runServicesMutation(() => createService(readService(fd)))
+  const user = await requireUser()
+  await runServicesMutation(() => createService(user.businessId, readService(fd)))
 }
 
 export async function updateServiceAction(fd: FormData): Promise<void> {
-  await requireUser()
-  await runServicesMutation(() => updateService(fdString(fd, 'id'), readService(fd)))
+  const user = await requireUser()
+  await runServicesMutation(() =>
+    updateService(user.businessId, fdString(fd, 'id'), readService(fd)),
+  )
 }
 
 export async function deleteServiceAction(fd: FormData): Promise<void> {
-  await requireUser()
-  await runServicesMutation(() => deleteService(fdString(fd, 'id')))
+  const user = await requireUser()
+  await runServicesMutation(() => deleteService(user.businessId, fdString(fd, 'id')))
 }
 
 // ---------------------------------------------------------------------------
@@ -124,18 +126,20 @@ async function runTemplatesMutation(mutate: () => Promise<unknown>): Promise<voi
 }
 
 export async function createTemplateAction(fd: FormData): Promise<void> {
-  await requireUser()
-  await runTemplatesMutation(() => createTemplate(readTemplate(fd)))
+  const user = await requireUser()
+  await runTemplatesMutation(() => createTemplate(user.businessId, readTemplate(fd)))
 }
 
 export async function updateTemplateAction(fd: FormData): Promise<void> {
-  await requireUser()
-  await runTemplatesMutation(() => updateTemplate(fdString(fd, 'id'), readTemplate(fd)))
+  const user = await requireUser()
+  await runTemplatesMutation(() =>
+    updateTemplate(user.businessId, fdString(fd, 'id'), readTemplate(fd)),
+  )
 }
 
 export async function deleteTemplateAction(fd: FormData): Promise<void> {
-  await requireUser()
-  await runTemplatesMutation(() => deleteTemplate(fdString(fd, 'id')))
+  const user = await requireUser()
+  await runTemplatesMutation(() => deleteTemplate(user.businessId, fdString(fd, 'id')))
 }
 
 // ---------------------------------------------------------------------------
@@ -156,9 +160,9 @@ async function runUsersMutation(mutate: () => Promise<unknown>): Promise<void> {
 }
 
 export async function createUserAction(fd: FormData): Promise<void> {
-  await requireOwner()
+  const user = await requireOwner()
   await runUsersMutation(() =>
-    createUser({
+    createUser(user.businessId, {
       email: z.email('Enter a valid email').parse(fdString(fd, 'email').trim()),
       name: fdString(fd, 'name').trim() || fdString(fd, 'email').trim(),
       password: fdString(fd, 'password'),
@@ -168,18 +172,20 @@ export async function createUserAction(fd: FormData): Promise<void> {
 }
 
 export async function setUserActiveAction(fd: FormData): Promise<void> {
-  await requireOwner()
-  await runUsersMutation(() => setUserActive(fdString(fd, 'id'), fdString(fd, 'active') === '1'))
+  const user = await requireOwner()
+  await runUsersMutation(() =>
+    setUserActive(user.businessId, fdString(fd, 'id'), fdString(fd, 'active') === '1'),
+  )
 }
 
 export async function setUserRoleAction(fd: FormData): Promise<void> {
-  await requireOwner()
+  const user = await requireOwner()
   await runUsersMutation(() =>
-    setUserRole(fdString(fd, 'id'), z.enum(ROLES).parse(fdString(fd, 'role'))),
+    setUserRole(user.businessId, fdString(fd, 'id'), z.enum(ROLES).parse(fdString(fd, 'role'))),
   )
 }
 
 export async function resetUserPasswordAction(fd: FormData): Promise<void> {
-  await requireOwner()
-  await runUsersMutation(() => resetUserPassword(fdString(fd, 'id'), fdString(fd, 'password')))
+  const user = await requireOwner()
+  await runUsersMutation(() => resetUserPassword(user.businessId, fdString(fd, 'id')))
 }

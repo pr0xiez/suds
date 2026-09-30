@@ -29,7 +29,18 @@ export default async function UsersSettingsPage({
 }) {
   const me = await requireOwner()
   const { error } = await searchParams
-  const users = await prisma.user.findMany({ orderBy: { createdAt: 'asc' } })
+  const memberships = await prisma.businessMembership.findMany({
+    where: { businessId: me.businessId },
+    include: { user: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  const users = memberships.map((membership) => ({
+    ...membership.user,
+    name: membership.acceptedAt ? membership.user.name : 'Invitation pending',
+    role: membership.role,
+    active: membership.active,
+    pending: !membership.acceptedAt,
+  }))
 
   return (
     <div className="max-w-3xl">
@@ -37,7 +48,7 @@ export default async function UsersSettingsPage({
       <SettingsNav current="/settings/users" isOwner />
       <ErrorBanner message={error} />
 
-      <Card title="Add a user" className="mb-6">
+      <Card title="Invite a teammate" className="mb-6">
         <form action={createUserAction} className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Name">
@@ -46,15 +57,7 @@ export default async function UsersSettingsPage({
             <Field label="Email">
               <input name="email" type="email" required className={inputClass} />
             </Field>
-            <Field label="Password (min 8 chars)">
-              <input
-                name="password"
-                type="password"
-                required
-                minLength={8}
-                className={inputClass}
-              />
-            </Field>
+
             <Field label="Role">
               <select name="role" defaultValue="STAFF" className={selectClass}>
                 <option value="STAFF">Staff</option>
@@ -63,7 +66,7 @@ export default async function UsersSettingsPage({
             </Field>
           </div>
           <button type="submit" className={btnPrimary}>
-            Create user
+            Send invitation
           </button>
         </form>
       </Card>
@@ -79,7 +82,7 @@ export default async function UsersSettingsPage({
                     {user.id === me.id ? (
                       <span className="ml-2 text-xs text-slate-400">(you)</span>
                     ) : null}
-                    {!user.active ? (
+                    {!user.active && !user.pending ? (
                       <span className="ml-2 text-xs font-semibold text-rose-500">deactivated</span>
                     ) : null}
                   </p>
@@ -104,7 +107,7 @@ export default async function UsersSettingsPage({
                     <input type="hidden" name="active" value={user.active ? '0' : '1'} />
                     {user.active ? (
                       <ConfirmSubmit
-                        message={`Deactivate ${user.name}? Their sessions end immediately.`}
+                        message={`Deactivate ${user.name}? Their access to this business ends immediately.`}
                         className={`${btnSecondary} ${btnSmall}`}
                       >
                         Deactivate
@@ -115,28 +118,14 @@ export default async function UsersSettingsPage({
                       </button>
                     )}
                   </form>
-                  <details className="relative">
-                    <summary className={`${btnSecondary} ${btnSmall} cursor-pointer list-none`}>
-                      Reset password
-                    </summary>
-                    <form
-                      action={resetUserPasswordAction}
-                      className="absolute right-0 z-20 mt-1 flex w-64 items-center gap-2 rounded-lg border border-slate-200 bg-white p-2 shadow-lg"
-                    >
+                  {!user.pending && (
+                    <form action={resetUserPasswordAction}>
                       <input type="hidden" name="id" value={user.id} />
-                      <input
-                        name="password"
-                        type="password"
-                        required
-                        minLength={8}
-                        placeholder="New password"
-                        className={inputClass}
-                      />
-                      <button type="submit" className={`${btnPrimary} ${btnSmall}`}>
-                        Set
+                      <button type="submit" className={`${btnSecondary} ${btnSmall}`}>
+                        Send recovery email
                       </button>
                     </form>
-                  </details>
+                  )}
                 </div>
               </div>
             </li>

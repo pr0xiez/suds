@@ -29,8 +29,8 @@ export default async function SchedulePage({
 }: {
   searchParams: Promise<{ week?: string }>
 }) {
-  await requireUser()
-  const settings = await getSettings()
+  const user = await requireUser()
+  const settings = await getSettings(user.businessId)
   const tz = settings.timezone
   const { week } = await searchParams
 
@@ -44,7 +44,7 @@ export default async function SchedulePage({
   const rangeStart = dayBoundsUtc(firstDay, tz).start
   const rangeEnd = dayBoundsUtc(lastDay, tz).end
   const jobs = await prisma.job.findMany({
-    where: { scheduledAt: { gte: rangeStart, lt: rangeEnd } },
+    where: { businessId: user.businessId, scheduledAt: { gte: rangeStart, lt: rangeEnd } },
     include: { customer: true, vehicle: true },
     orderBy: { scheduledAt: 'asc' },
   })

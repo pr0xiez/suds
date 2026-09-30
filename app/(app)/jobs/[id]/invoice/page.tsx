@@ -12,12 +12,12 @@ import { getSettings } from '@/lib/ops/settings'
 export const metadata = { title: 'Invoice' }
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser()
+  const user = await requireUser()
   const { id } = await params
   const [settings, job] = await Promise.all([
-    getSettings(),
+    getSettings(user.businessId),
     prisma.job.findUnique({
-      where: { id },
+      where: { businessId: user.businessId, id },
       include: { customer: true, vehicle: true, items: { orderBy: { sort: 'asc' } } },
     }),
   ])

@@ -15,15 +15,16 @@ export default async function NewJobPage({
 }: {
   searchParams: Promise<{ at?: string; customer?: string }>
 }) {
-  await requireUser()
+  const user = await requireUser()
   const { at, customer } = await searchParams
   const [settings, customers, services] = await Promise.all([
-    getSettings(),
+    getSettings(user.businessId),
     prisma.customer.findMany({
+      where: { businessId: user.businessId },
       include: { vehicles: { orderBy: { createdAt: 'asc' } } },
       orderBy: { name: 'asc' },
     }),
-    activeServices(),
+    activeServices(user.businessId),
   ])
 
   if (customers.length === 0) {

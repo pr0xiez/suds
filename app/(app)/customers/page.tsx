@@ -11,7 +11,7 @@ export default async function CustomersPage({
 }: {
   searchParams: Promise<{ q?: string }>
 }) {
-  await requireUser()
+  const user = await requireUser()
   const { q: rawQ } = await searchParams
   const q = (rawQ ?? '').trim()
 
@@ -28,7 +28,7 @@ export default async function CustomersPage({
     : {}
 
   const customers = await prisma.customer.findMany({
-    where,
+    where: { ...where, businessId: user.businessId },
     include: { vehicles: true, _count: { select: { jobs: true } } },
     orderBy: { name: 'asc' },
     take: 200,

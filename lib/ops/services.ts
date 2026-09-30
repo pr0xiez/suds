@@ -12,25 +12,29 @@ export interface ServiceInput {
   sort: number
 }
 
-export async function createService(input: ServiceInput): Promise<Service> {
-  return prisma.service.create({ data: input })
+export async function createService(businessId: string, input: ServiceInput): Promise<Service> {
+  return prisma.service.create({ data: { ...input, businessId } })
 }
 
-export async function updateService(id: string, input: ServiceInput): Promise<Service> {
-  return prisma.service.update({ where: { id }, data: input })
+export async function updateService(
+  businessId: string,
+  id: string,
+  input: ServiceInput,
+): Promise<Service> {
+  return prisma.service.update({ where: { businessId_id: { businessId, id } }, data: input })
 }
 
 /**
  * Deleting a service is safe for history: job lines snapshot name/price/duration
  * at booking time and only carry serviceId as a soft link (SetNull on delete).
  */
-export async function deleteService(id: string): Promise<void> {
-  await prisma.service.delete({ where: { id } })
+export async function deleteService(businessId: string, id: string): Promise<void> {
+  await prisma.service.delete({ where: { businessId_id: { businessId, id } } })
 }
 
-export async function activeServices(): Promise<Service[]> {
+export async function activeServices(businessId: string): Promise<Service[]> {
   return prisma.service.findMany({
-    where: { active: true },
+    where: { businessId, active: true },
     orderBy: [{ sort: 'asc' }, { name: 'asc' }],
   })
 }

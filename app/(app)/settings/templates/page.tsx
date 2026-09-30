@@ -30,12 +30,15 @@ export default async function TemplatesSettingsPage({
 }) {
   const user = await requireUser()
   const { error } = await searchParams
-  const templates = await prisma.captionTemplate.findMany({ orderBy: { name: 'asc' } })
+  const templates = await prisma.captionTemplate.findMany({
+    where: { businessId: user.businessId },
+    orderBy: { name: 'asc' },
+  })
 
   return (
     <div className="max-w-3xl">
       <PageHeader title="Settings" />
-      <SettingsNav current="/settings/templates" isOwner={user.role === 'OWNER'} />
+      <SettingsNav current="/settings/templates" isOwner={user.businessRole === 'OWNER'} />
       <ErrorBanner message={error} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_16rem]">

@@ -30,18 +30,25 @@ export default async function PostPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ error?: string; saved?: string }>
 }) {
-  await requireUser()
+  const user = await requireUser()
   const { id } = await params
   const { error, saved } = await searchParams
   const [settings, post, photos, templates] = await Promise.all([
-    getSettings(),
-    prisma.socialPost.findUnique({ where: { id }, include: postInclude }),
+    getSettings(user.businessId),
+    prisma.socialPost.findUnique({
+      where: { businessId: user.businessId, id },
+      include: postInclude,
+    }),
     prisma.photo.findMany({
+      where: { businessId: user.businessId, approvedForMarketing: true },
       include: { job: { include: { vehicle: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     }),
-    prisma.captionTemplate.findMany({ orderBy: { name: 'asc' } }),
+    prisma.captionTemplate.findMany({
+      where: { businessId: user.businessId },
+      orderBy: { name: 'asc' },
+    }),
   ])
   if (!post) notFound()
   const tz = settings.timezone
@@ -115,16 +122,18 @@ export default async function PostPage({
             <CopyButton text={post.caption} className={`${btnSecondary} ${btnSmall}`}>
               Copy caption
             </CopyButton>
-            {post.photos.map((pp, index) => (
-              <a
-                key={pp.photoId}
-                href={`/api/photos/${pp.photoId}`}
-                download={`post-photo-${index + 1}`}
-                className={`${btnSecondary} ${btnSmall}`}
-              >
-                ↓ Photo {index + 1}
-              </a>
-            ))}
+            {post.photos
+              .filter((pp) => pp.photo.approvedForMarketing)
+              .map((pp, index) => (
+                <a
+                  key={pp.photoId}
+                  href={`/api/photos/${pp.photoId}`}
+                  download={`post-photo-${index + 1}`}
+                  className={`${btnSecondary} ${btnSmall}`}
+                >
+                  ↓ Photo {index + 1}
+                </a>
+              ))}
             {post.platforms.map((platform) => (
               <a
                 key={platform}
@@ -160,7 +169,9 @@ export default async function PostPage({
           platforms: post.platforms,
           scheduledFor: post.scheduledFor ? toDatetimeLocalValue(post.scheduledFor, tz) : '',
           jobId: post.jobId ?? '',
-          photoIds: post.photos.map((pp) => pp.photoId),
+          photoIds: post.photos
+            .filter((pp) => pp.photo.approvedForMarketing)
+            .map((pp) => pp.photoId),
         }}
       />
     </div>

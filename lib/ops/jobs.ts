@@ -1,6 +1,8 @@
+import { assertScheduleAvailable, lockBusinessSchedule } from '@/lib/bookingSchedule'
 import { prisma } from '@/lib/db/client'
 import type { Job, Prisma } from '@/lib/generated/prisma/client'
 import type { JobStatus, PaymentMethod } from '@/lib/generated/prisma/enums'
+import { queueBookingNotice } from '@/lib/ops/bookings'
 import { deleteUploadFile } from '@/lib/uploads'
 
 export interface CustomLineInput {
@@ -48,10 +50,13 @@ type ItemRow = {
  * can pick services but not reprice them.
  */
 async function buildItems(
+  businessId: string,
   serviceIds: string[],
   customLines: CustomLineInput[],
 ): Promise<ItemRow[]> {
-  const services = await prisma.service.findMany({ where: { id: { in: serviceIds } } })
+  const services = await prisma.service.findMany({
+    where: { businessId, id: { in: serviceIds }, active: true },
+  })
   const byId = new Map(services.map((s) => [s.id, s]))
   const items: ItemRow[] = []
   let sort = 0
@@ -79,49 +84,107 @@ function deriveDuration(override: number | null, items: ItemRow[]): number {
   return Math.max(sum, 30)
 }
 
-async function assertVehicleBelongsToCustomer(vehicleId: string, customerId: string) {
-  const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId } })
+async function assertVehicleBelongsToCustomer(
+  businessId: string,
+  vehicleId: string,
+  customerId: string,
+) {
+  const vehicle = await prisma.vehicle.findUnique({
+    where: { businessId_id: { businessId, id: vehicleId } },
+  })
   if (!vehicle || vehicle.customerId !== customerId) {
     throw new Error('Vehicle does not belong to that customer')
   }
 }
 
-export async function createJob(input: JobInput): Promise<Job> {
-  await assertVehicleBelongsToCustomer(input.vehicleId, input.customerId)
-  const items = await buildItems(input.serviceIds, input.customLines)
-  return prisma.job.create({
-    data: {
-      customerId: input.customerId,
-      vehicleId: input.vehicleId,
-      scheduledAt: input.scheduledAt,
-      durationMin: deriveDuration(input.durationMin, items),
-      notes: input.notes,
-      internalNotes: input.internalNotes,
-      discountCents: input.discountCents,
-      items: { create: items },
+export async function createJob(businessId: string, input: JobInput): Promise<Job> {
+  await assertVehicleBelongsToCustomer(businessId, input.vehicleId, input.customerId)
+  const items = await buildItems(businessId, input.serviceIds, input.customLines)
+  return prisma.$transaction(
+    async (tx) => {
+      await assertScheduleAvailable(
+        tx,
+        businessId,
+        input.scheduledAt,
+        deriveDuration(input.durationMin, items),
+      )
+      return tx.job.create({
+        data: {
+          businessId,
+          customerId: input.customerId,
+          vehicleId: input.vehicleId,
+          scheduledAt: input.scheduledAt,
+          durationMin: deriveDuration(input.durationMin, items),
+          notes: input.notes,
+          internalNotes: input.internalNotes,
+          discountCents: input.discountCents,
+          items: { create: items },
+        },
+      })
     },
-  })
+    { timeout: 20_000, maxWait: 20_000 },
+  )
 }
 
-export async function updateJob(id: string, input: JobInput): Promise<Job> {
-  await assertVehicleBelongsToCustomer(input.vehicleId, input.customerId)
-  const items = await buildItems(input.serviceIds, input.customLines)
-  return prisma.$transaction(async (tx) => {
-    await tx.jobItem.deleteMany({ where: { jobId: id } })
-    return tx.job.update({
-      where: { id },
-      data: {
-        customerId: input.customerId,
-        vehicleId: input.vehicleId,
-        scheduledAt: input.scheduledAt,
-        durationMin: deriveDuration(input.durationMin, items),
-        notes: input.notes,
-        internalNotes: input.internalNotes,
-        discountCents: input.discountCents,
-        items: { create: items },
-      },
-    })
-  })
+export async function updateJob(businessId: string, id: string, input: JobInput): Promise<Job> {
+  await assertVehicleBelongsToCustomer(businessId, input.vehicleId, input.customerId)
+  const items = await buildItems(businessId, input.serviceIds, input.customLines)
+  return prisma.$transaction(
+    async (tx) => {
+      await lockBusinessSchedule(tx, businessId)
+      const existing = await tx.job.findUniqueOrThrow({
+        where: { businessId_id: { businessId, id } },
+        include: { booking: true },
+      })
+      if (
+        existing.booking &&
+        (input.customerId !== existing.customerId || input.vehicleId !== existing.vehicleId)
+      )
+        throw new Error('A customer booking cannot be reassigned to another customer or vehicle')
+      if (!['CANCELED', 'NO_SHOW'].includes(existing.status))
+        await assertScheduleAvailable(
+          tx,
+          businessId,
+          input.scheduledAt,
+          deriveDuration(input.durationMin, items),
+          { excludeJobId: id, excludeBookingId: existing.booking?.id },
+        )
+      await tx.jobItem.deleteMany({ where: { jobId: id } })
+      const job = await tx.job.update({
+        where: { businessId_id: { businessId, id } },
+        data: {
+          customerId: input.customerId,
+          vehicleId: input.vehicleId,
+          scheduledAt: input.scheduledAt,
+          durationMin: deriveDuration(input.durationMin, items),
+          notes: input.notes,
+          internalNotes: input.internalNotes,
+          discountCents: input.discountCents,
+          items: { create: items },
+        },
+      })
+      if (existing.booking) {
+        const booking = await tx.booking.update({
+          where: { id: existing.booking.id },
+          data: {
+            scheduledAt: job.scheduledAt,
+            durationMin: job.durationMin,
+            serviceSnapshots: items,
+            priceCents: Math.max(
+              0,
+              items.reduce((sum, line) => sum + line.priceCents, 0) - job.discountCents,
+            ),
+            address: job.locationAddress,
+            waterPowerNotes: job.waterPowerNotes,
+            customerNotes: job.notes,
+          },
+        })
+        await queueBookingNotice(tx, booking, 'updated')
+      }
+      return job
+    },
+    { timeout: 20_000 },
+  )
 }
 
 // target status → statuses it may come from
@@ -140,39 +203,68 @@ export function availableTransitions(from: JobStatus): JobStatus[] {
   )
 }
 
-export async function setJobStatus(id: string, status: JobStatus): Promise<Job> {
-  const job = await prisma.job.findUniqueOrThrow({ where: { id } })
-  if (job.status === status) return job
-  if (!TRANSITIONS[status].includes(job.status)) {
-    throw new Error(`Cannot move a ${job.status.toLowerCase()} job to ${status.toLowerCase()}`)
-  }
-  return prisma.job.update({
-    where: { id },
-    data: {
-      status,
-      completedAt:
-        status === 'COMPLETED'
-          ? (job.completedAt ?? new Date())
-          : status === 'SCHEDULED'
-            ? null
-            : job.completedAt,
+export async function setJobStatus(
+  businessId: string,
+  id: string,
+  status: JobStatus,
+): Promise<Job> {
+  return prisma.$transaction(
+    async (tx) => {
+      await lockBusinessSchedule(tx, businessId)
+      const job = await tx.job.findUniqueOrThrow({
+        where: { businessId_id: { businessId, id } },
+        include: { booking: true },
+      })
+      if (job.status === status) return job
+      if (!TRANSITIONS[status].includes(job.status)) {
+        throw new Error(`Cannot move a ${job.status.toLowerCase()} job to ${status.toLowerCase()}`)
+      }
+      if (status === 'SCHEDULED' || status === 'IN_PROGRESS')
+        await assertScheduleAvailable(tx, businessId, job.scheduledAt, job.durationMin, {
+          excludeJobId: id,
+          excludeBookingId: job.booking?.id,
+        })
+      const updated = await tx.job.update({
+        where: { businessId_id: { businessId, id } },
+        data: {
+          status,
+          completedAt:
+            status === 'COMPLETED'
+              ? (job.completedAt ?? new Date())
+              : status === 'SCHEDULED'
+                ? null
+                : job.completedAt,
+        },
+      })
+      if (job.booking) {
+        const booking = await tx.booking.update({
+          where: { id: job.booking.id },
+          data: {
+            status: status === 'CANCELED' || status === 'NO_SHOW' ? 'CANCELED' : 'CONFIRMED',
+          },
+        })
+        await queueBookingNotice(tx, booking, status.toLowerCase())
+      }
+      return updated
     },
-  })
+    { timeout: 20_000 },
+  )
 }
 
 export async function recordPayment(
+  businessId: string,
   id: string,
   payment: { method: PaymentMethod; tipCents: number },
 ): Promise<Job> {
   return prisma.job.update({
-    where: { id },
+    where: { businessId_id: { businessId, id } },
     data: { paidAt: new Date(), paymentMethod: payment.method, tipCents: payment.tipCents },
   })
 }
 
-export async function clearPayment(id: string): Promise<Job> {
+export async function clearPayment(businessId: string, id: string): Promise<Job> {
   return prisma.job.update({
-    where: { id },
+    where: { businessId_id: { businessId, id } },
     data: { paidAt: null, paymentMethod: null, tipCents: 0 },
   })
 }
@@ -182,21 +274,26 @@ export async function clearPayment(id: string): Promise<Job> {
  * update takes a row lock, so concurrent calls serialize; a lost race wastes a
  * number, never reuses one.
  */
-export async function ensureInvoice(id: string): Promise<number> {
+export async function ensureInvoice(businessId: string, id: string): Promise<number> {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.job.findUniqueOrThrow({
-      where: { id },
+      where: { businessId_id: { businessId, id } },
       select: { invoiceNumber: true },
     })
     if (existing.invoiceNumber !== null) return existing.invoiceNumber
-    await tx.settings.upsert({ where: { id: 1 }, update: {}, create: { id: 1 } })
+    await tx.settings.upsert({ where: { businessId }, update: {}, create: { businessId } })
     const settings = await tx.settings.update({
-      where: { id: 1 },
+      where: { businessId },
       data: { nextInvoiceNumber: { increment: 1 } },
     })
+    const recheck = await tx.job.findUniqueOrThrow({
+      where: { businessId_id: { businessId, id } },
+      select: { invoiceNumber: true },
+    })
+    if (recheck.invoiceNumber !== null) return recheck.invoiceNumber
     const number = settings.nextInvoiceNumber - 1
     await tx.job.update({
-      where: { id },
+      where: { businessId_id: { businessId, id } },
       data: { invoiceNumber: number, invoicedAt: new Date() },
     })
     return number
@@ -204,10 +301,25 @@ export async function ensureInvoice(id: string): Promise<number> {
 }
 
 /** Removes the job, its lines, and its photos — including the files on disk. */
-export async function deleteJob(id: string): Promise<void> {
-  const photos = await prisma.photo.findMany({ where: { jobId: id } })
-  await prisma.job.delete({ where: { id } })
-  for (const photo of photos) {
-    await deleteUploadFile(photo.filename)
-  }
+export async function deleteJob(businessId: string, id: string): Promise<void> {
+  const photos = await prisma.$transaction(
+    async (tx) => {
+      await lockBusinessSchedule(tx, businessId)
+      const job = await tx.job.findUniqueOrThrow({
+        where: { businessId_id: { businessId, id } },
+        include: { booking: true, photos: true },
+      })
+      if (job.booking) {
+        const booking = await tx.booking.update({
+          where: { id: job.booking.id },
+          data: { status: 'CANCELED' },
+        })
+        await queueBookingNotice(tx, booking, 'canceled')
+      }
+      await tx.job.delete({ where: { businessId_id: { businessId, id } } })
+      return job.photos
+    },
+    { timeout: 20_000 },
+  )
+  for (const photo of photos) await deleteUploadFile(photo.filename)
 }

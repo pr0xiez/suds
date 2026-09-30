@@ -21,13 +21,13 @@ export default async function SettingsPage({
   searchParams: Promise<{ error?: string; saved?: string }>
 }) {
   const user = await requireUser()
-  const settings = await getSettings()
+  const settings = await getSettings(user.businessId)
   const { error, saved } = await searchParams
 
   return (
     <div className="max-w-3xl">
       <PageHeader title="Settings" />
-      <SettingsNav current="/settings" isOwner={user.role === 'OWNER'} />
+      <SettingsNav current="/settings" isOwner={user.businessRole === 'OWNER'} />
       <ErrorBanner message={error} />
       <SuccessBanner message={saved ? 'Settings saved.' : null} />
 

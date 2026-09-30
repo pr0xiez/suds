@@ -13,6 +13,7 @@ import { afterImage, beforeImage } from './seedImages'
  * built to surface (an unpaid job, an overdue post, a job with no photos).
  */
 
+const BUSINESS_ID = 'suds-legacy'
 const TZ = 'America/New_York'
 const DEFAULT_PASSWORD = 'washwaxrepeat'
 
@@ -22,6 +23,13 @@ const at = (dayOffset: number, hour: number, minute = 0) =>
 
 async function wipe() {
   const photos = await prisma.photo.findMany()
+  await prisma.booking.deleteMany()
+  await prisma.mediaUpload.deleteMany()
+  await prisma.aiRun.deleteMany()
+  await prisma.notificationOutbox.deleteMany()
+  await prisma.availabilityBlock.deleteMany()
+  await prisma.accountToken.deleteMany()
+  await prisma.businessMembership.deleteMany()
   await prisma.postPhoto.deleteMany()
   await prisma.socialPost.deleteMany()
   await prisma.photo.deleteMany()
@@ -34,6 +42,7 @@ async function wipe() {
   await prisma.session.deleteMany()
   await prisma.user.deleteMany()
   await prisma.settings.deleteMany()
+  await prisma.business.deleteMany()
   for (const photo of photos) {
     await deleteUploadFile(photo.filename)
   }
@@ -97,12 +106,26 @@ const SERVICE_SEEDS: ServiceSeed[] = [
 ]
 
 async function main() {
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DESTRUCTIVE_DEMO_SEED !== 'yes')
+    throw new Error(
+      'Demo seed wipes all data. Set ALLOW_DESTRUCTIVE_DEMO_SEED=yes only for a disposable development database.',
+    )
   console.log('Wiping…')
   await wipe()
 
+  await prisma.business.create({
+    data: {
+      id: BUSINESS_ID,
+      slug: 'suds-detailing',
+      name: 'Suds Auto Detailing',
+      serviceArea: 'Cincinnati, OH',
+      status: 'PUBLISHED',
+    },
+  })
   await prisma.settings.create({
     data: {
-      id: 1,
+      businessId: BUSINESS_ID,
+      setupComplete: true,
       businessName: 'Suds Auto Detailing',
       phone: '(513) 555-0147',
       email: 'hello@sudsdetailing.com',
@@ -125,10 +148,24 @@ async function main() {
   }
   const passwordHash = await hashPassword(password)
   await prisma.user.create({
-    data: { email: 'owner@suds.local', name: 'Alex', role: 'OWNER', passwordHash },
+    data: {
+      email: 'owner@suds.local',
+      name: 'Alex',
+      role: 'OWNER',
+      passwordHash,
+      emailVerifiedAt: new Date(),
+      memberships: { create: { businessId: BUSINESS_ID, role: 'OWNER', acceptedAt: new Date() } },
+    },
   })
   await prisma.user.create({
-    data: { email: 'staff@suds.local', name: 'Jordan', role: 'STAFF', passwordHash },
+    data: {
+      email: 'staff@suds.local',
+      name: 'Jordan',
+      role: 'STAFF',
+      passwordHash,
+      emailVerifiedAt: new Date(),
+      memberships: { create: { businessId: BUSINESS_ID, role: 'STAFF', acceptedAt: new Date() } },
+    },
   })
 
   const services = new Map<
@@ -137,7 +174,7 @@ async function main() {
   >()
   for (const seed of SERVICE_SEEDS) {
     const created = await prisma.service.create({
-      data: { ...seed, description: seed.description ?? '' },
+      data: { businessId: BUSINESS_ID, ...seed, description: seed.description ?? '' },
     })
     services.set(seed.name, created)
   }
@@ -150,6 +187,7 @@ async function main() {
   // Customers & vehicles ----------------------------------------------------
   const marcus = await prisma.customer.create({
     data: {
+      businessId: BUSINESS_ID,
       name: 'Marcus Rivera',
       phone: '(513) 555-0121',
       email: 'marcus@example.com',
@@ -159,6 +197,7 @@ async function main() {
   })
   const dana = await prisma.customer.create({
     data: {
+      businessId: BUSINESS_ID,
       name: 'Dana Whitfield',
       phone: '(513) 555-0182',
       vehicles: {
@@ -172,6 +211,7 @@ async function main() {
   })
   const priya = await prisma.customer.create({
     data: {
+      businessId: BUSINESS_ID,
       name: 'Priya Natarajan',
       phone: '(513) 555-0139',
       email: 'priya@example.com',
@@ -181,6 +221,7 @@ async function main() {
   })
   const tom = await prisma.customer.create({
     data: {
+      businessId: BUSINESS_ID,
       name: 'Tom Okafor',
       phone: '(513) 555-0166',
       vehicles: { create: [{ year: 2018, make: 'Jeep', model: 'Wrangler', color: 'Red' }] },
@@ -189,6 +230,7 @@ async function main() {
   })
   const jess = await prisma.customer.create({
     data: {
+      businessId: BUSINESS_ID,
       name: 'Jess Malone',
       phone: '(513) 555-0110',
       notes: 'Two golden retrievers — expect heavy pet hair.',
@@ -198,6 +240,7 @@ async function main() {
   })
   const hank = await prisma.customer.create({
     data: {
+      businessId: BUSINESS_ID,
       name: 'Hank Voss',
       phone: '(513) 555-0195',
       notes: 'Garage-kept Corvette. Very particular about swirl marks.',
@@ -246,6 +289,7 @@ async function main() {
       seed.status === 'COMPLETED' ? new Date(seed.when.getTime() + durationMin * 60000) : null
     return prisma.job.create({
       data: {
+        businessId: BUSINESS_ID,
         customerId: seed.customerId,
         vehicleId: seed.vehicleId,
         scheduledAt: seed.when,
@@ -382,7 +426,7 @@ async function main() {
   async function photograph(jobId: string, seed: number) {
     const ids: string[] = []
     for (const [index, buf] of [afterImage(seed), afterImage(seed + 10)].entries()) {
-      const photo = await addPhoto({
+      const photo = await addPhoto(BUSINESS_ID, {
         jobId,
         kind: 'AFTER',
         data: buf,
@@ -391,7 +435,7 @@ async function main() {
       ids.push(photo.id)
     }
     for (const [index, buf] of [beforeImage(seed), beforeImage(seed + 10)].entries()) {
-      const photo = await addPhoto({
+      const photo = await addPhoto(BUSINESS_ID, {
         jobId,
         kind: 'BEFORE',
         data: buf,
@@ -419,6 +463,7 @@ async function main() {
   }) {
     return prisma.socialPost.create({
       data: {
+        businessId: BUSINESS_ID,
         caption: input.caption,
         platforms: input.platforms,
         status: input.status,
@@ -468,18 +513,22 @@ async function main() {
   await prisma.captionTemplate.createMany({
     data: [
       {
+        businessId: BUSINESS_ID,
         name: 'Before / after reveal',
         body: 'Swipe ➡️ for the before. {{vehicle}} in for {{services}} at {{business}}. Book your spot in {{city}} — link in bio!',
       },
       {
+        businessId: BUSINESS_ID,
         name: 'Fresh off the pad',
         body: '✨ {{services}} on this {{vehicleShort}}. That gloss speaks for itself. 📍 {{city}} · ☎ {{phone}}',
       },
       {
+        businessId: BUSINESS_ID,
         name: 'Booking push',
         body: 'Slots are open this week! Full details, ceramic coating, interior rescues — {{business}} has you covered. Call {{phone}}.',
       },
       {
+        businessId: BUSINESS_ID,
         name: 'Customer shoutout',
         body: 'Big thanks to {{customer}} for trusting us with their {{vehicleShort}}! {{services}} ✅',
       },

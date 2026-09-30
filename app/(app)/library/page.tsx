@@ -1,11 +1,13 @@
 import clsx from 'clsx'
 import Link from 'next/link'
 import { ErrorBanner } from '@/components/banners'
+import { MediaUploader } from '@/components/MediaUploader'
 import { PhotoTile } from '@/components/PhotoTile'
 import { btnSecondary, Card, EmptyState, PageHeader, selectClass } from '@/components/ui'
 import { requireUser } from '@/lib/auth/session'
 import { prisma } from '@/lib/db/client'
 import type { Prisma } from '@/lib/generated/prisma/client'
+import { durableStorageConfigured } from '@/lib/storage'
 
 export const metadata = { title: 'Library' }
 
@@ -17,7 +19,7 @@ export default async function LibraryPage({
 }: {
   searchParams: Promise<{ kind?: string; error?: string }>
 }) {
-  await requireUser()
+  const user = await requireUser()
   const params = await searchParams
   const kind: KindFilter = KINDS.includes(params.kind as KindFilter)
     ? (params.kind as KindFilter)
@@ -25,7 +27,7 @@ export default async function LibraryPage({
 
   const where: Prisma.PhotoWhereInput = kind === 'ALL' ? {} : { kind }
   const photos = await prisma.photo.findMany({
-    where,
+    where: { ...where, businessId: user.businessId },
     include: { job: { include: { vehicle: true, customer: true } } },
     orderBy: { createdAt: 'desc' },
     take: 300,
@@ -42,32 +44,36 @@ export default async function LibraryPage({
       <ErrorBanner message={params.error} />
 
       <Card className="mb-4">
-        <form
-          method="post"
-          action="/api/library/upload"
-          encType="multipart/form-data"
-          className="flex flex-wrap items-center gap-2"
-        >
-          <select name="kind" className={`${selectClass} w-28`} defaultValue="OTHER">
-            <option value="BEFORE">Before</option>
-            <option value="AFTER">After</option>
-            <option value="OTHER">Other</option>
-          </select>
-          <input
-            type="file"
-            name="files"
-            accept="image/*"
-            multiple
-            required
-            className="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-300"
-          />
-          <button type="submit" className={btnSecondary}>
-            Upload
-          </button>
-          <span className="text-xs text-slate-400">
-            Tip: photos added on a job page land here too, already labeled.
-          </span>
-        </form>
+        {durableStorageConfigured() ? (
+          <MediaUploader />
+        ) : (
+          <form
+            method="post"
+            action="/api/library/upload"
+            encType="multipart/form-data"
+            className="flex flex-wrap items-center gap-2"
+          >
+            <select name="kind" className={`${selectClass} w-28`} defaultValue="OTHER">
+              <option value="BEFORE">Before</option>
+              <option value="AFTER">After</option>
+              <option value="OTHER">Other</option>
+            </select>
+            <input
+              type="file"
+              name="files"
+              accept="image/*"
+              multiple
+              required
+              className="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-300"
+            />
+            <button type="submit" className={btnSecondary}>
+              Upload
+            </button>
+            <span className="text-xs text-slate-400">
+              Tip: photos added on a job page land here too, already labeled.
+            </span>
+          </form>
+        )}
       </Card>
 
       <div className="mb-4 flex gap-1">
@@ -93,6 +99,7 @@ export default async function LibraryPage({
             <PhotoTile
               key={photo.id}
               photo={photo}
+              canApprove={user.businessRole === 'OWNER'}
               back={back}
               footer={
                 photo.job ? (

@@ -4,6 +4,7 @@ import {
   addVehicleAction,
   deleteCustomerAction,
   deleteVehicleAction,
+  inviteCustomerPortalAction,
   updateCustomerAction,
   updateVehicleAction,
 } from '@/app/actions/customers'
@@ -34,15 +35,15 @@ export default async function CustomerPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ error?: string; saved?: string }>
+  searchParams: Promise<{ error?: string; saved?: string; invited?: string }>
 }) {
-  await requireUser()
+  const user = await requireUser()
   const { id } = await params
-  const { error, saved } = await searchParams
+  const { error, saved, invited } = await searchParams
   const [settings, customer] = await Promise.all([
-    getSettings(),
+    getSettings(user.businessId),
     prisma.customer.findUnique({
-      where: { id },
+      where: { businessId: user.businessId, id },
       include: {
         vehicles: { orderBy: { createdAt: 'asc' } },
         jobs: {
@@ -81,6 +82,33 @@ export default async function CustomerPage({
 
       <ErrorBanner message={error} />
       <SuccessBanner message={saved ? 'Saved.' : null} />
+      <SuccessBanner message={invited ? 'Portal invitation queued for email delivery.' : null} />
+
+      {user.businessRole === 'OWNER' && (
+        <div className="mb-6 rounded-xl border border-slate-200 bg-white p-4 text-sm">
+          {customer.userId ? (
+            <p className="text-emerald-800">This customer has linked their appointment portal.</p>
+          ) : (
+            <>
+              <p className="text-slate-600">
+                Invite this customer to view their vehicles, appointments, and invoices after
+                confirming their email.
+              </p>
+              <form action={inviteCustomerPortalAction} className="mt-3">
+                <input type="hidden" name="id" value={customer.id} />
+                <button type="submit" disabled={!customer.email} className={btnSecondary}>
+                  Invite to customer portal
+                </button>
+              </form>
+              {!customer.email && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Add an email address to send an invitation.
+                </p>
+              )}
+            </>
+          )}
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card title="Details">

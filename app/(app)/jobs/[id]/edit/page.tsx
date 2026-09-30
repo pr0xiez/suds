@@ -11,19 +11,20 @@ import { getSettings } from '@/lib/ops/settings'
 export const metadata = { title: 'Edit job' }
 
 export default async function EditJobPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireUser()
+  const user = await requireUser()
   const { id } = await params
   const [settings, job, customers, services] = await Promise.all([
-    getSettings(),
+    getSettings(user.businessId),
     prisma.job.findUnique({
-      where: { id },
+      where: { businessId: user.businessId, id },
       include: { items: { orderBy: { sort: 'asc' } } },
     }),
     prisma.customer.findMany({
+      where: { businessId: user.businessId },
       include: { vehicles: { orderBy: { createdAt: 'asc' } } },
       orderBy: { name: 'asc' },
     }),
-    activeServices(),
+    activeServices(user.businessId),
   ])
   if (!job) notFound()
 

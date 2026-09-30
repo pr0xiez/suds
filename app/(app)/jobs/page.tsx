@@ -38,8 +38,8 @@ export default async function JobsPage({
 }: {
   searchParams: Promise<{ when?: string; status?: string; q?: string }>
 }) {
-  await requireUser()
-  const settings = await getSettings()
+  const user = await requireUser()
+  const settings = await getSettings(user.businessId)
   const tz = settings.timezone
   const params = await searchParams
   const when: WhenFilter = WHENS.includes(params.when as WhenFilter)
@@ -63,7 +63,7 @@ export default async function JobsPage({
   }
 
   const jobs = await prisma.job.findMany({
-    where,
+    where: { ...where, businessId: user.businessId },
     include: { customer: true, vehicle: true, items: true },
     orderBy: { scheduledAt: when === 'past' ? 'desc' : 'asc' },
     take: 200,

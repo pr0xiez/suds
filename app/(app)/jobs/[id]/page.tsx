@@ -11,6 +11,7 @@ import {
 import { ErrorBanner, SuccessBanner } from '@/components/banners'
 import { ConfirmSubmit } from '@/components/ConfirmSubmit'
 import { CopyButton } from '@/components/CopyButton'
+import { MediaUploader } from '@/components/MediaUploader'
 import { PhotoTile } from '@/components/PhotoTile'
 import {
   btnDanger,
@@ -33,6 +34,7 @@ import type { JobStatus } from '@/lib/generated/prisma/enums'
 import { formatCents, jobTotalCents, sumCents } from '@/lib/money'
 import { availableTransitions } from '@/lib/ops/jobs'
 import { getSettings } from '@/lib/ops/settings'
+import { durableStorageConfigured } from '@/lib/storage'
 
 export const metadata = { title: 'Job' }
 
@@ -67,13 +69,13 @@ export default async function JobPage({
   params: Promise<{ id: string }>
   searchParams: Promise<{ error?: string; saved?: string }>
 }) {
-  await requireUser()
+  const user = await requireUser()
   const { id } = await params
   const { error, saved } = await searchParams
   const [settings, job] = await Promise.all([
-    getSettings(),
+    getSettings(user.businessId),
     prisma.job.findUnique({
-      where: { id },
+      where: { businessId: user.businessId, id },
       include: {
         customer: true,
         vehicle: true,
@@ -203,29 +205,33 @@ export default async function JobPage({
               <span className="text-xs text-slate-400">before / after fuels the social side</span>
             }
           >
-            <form
-              method="post"
-              action={`/api/jobs/${job.id}/photos`}
-              encType="multipart/form-data"
-              className="mb-4 flex flex-wrap items-center gap-2"
-            >
-              <select name="kind" className={`${selectClass} w-28`} defaultValue="BEFORE">
-                <option value="BEFORE">Before</option>
-                <option value="AFTER">After</option>
-                <option value="OTHER">Other</option>
-              </select>
-              <input
-                type="file"
-                name="files"
-                accept="image/*"
-                multiple
-                required
-                className="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-300"
-              />
-              <button type="submit" className={btnSecondary}>
-                Upload
-              </button>
-            </form>
+            {durableStorageConfigured() ? (
+              <MediaUploader jobId={job.id} />
+            ) : (
+              <form
+                method="post"
+                action={`/api/jobs/${job.id}/photos`}
+                encType="multipart/form-data"
+                className="mb-4 flex flex-wrap items-center gap-2"
+              >
+                <select name="kind" className={`${selectClass} w-28`} defaultValue="BEFORE">
+                  <option value="BEFORE">Before</option>
+                  <option value="AFTER">After</option>
+                  <option value="OTHER">Other</option>
+                </select>
+                <input
+                  type="file"
+                  name="files"
+                  accept="image/*"
+                  multiple
+                  required
+                  className="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-300"
+                />
+                <button type="submit" className={btnSecondary}>
+                  Upload
+                </button>
+              </form>
+            )}
             {job.photos.length === 0 ? (
               <EmptyState
                 title="No photos yet"
@@ -234,7 +240,12 @@ export default async function JobPage({
             ) : (
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
                 {job.photos.map((photo) => (
-                  <PhotoTile key={photo.id} photo={photo} back={backPath} />
+                  <PhotoTile
+                    key={photo.id}
+                    photo={photo}
+                    back={backPath}
+                    canApprove={user.businessRole === 'OWNER'}
+                  />
                 ))}
               </div>
             )}

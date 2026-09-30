@@ -1,6 +1,6 @@
 // suds — job + social manager for a car detailing shop.
 //
-// Single-business app: no tenancy, one Settings row (id = 1). Money is always
+// Business-scoped app. Identity and memberships are separate. Money is always
 // integer cents. Times are stored UTC and rendered in the business timezone
 // (Settings.timezone) through lib/dates.ts — never with the server's local zone.
 
@@ -19,6 +19,30 @@ datasource db {
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
+
+enum BusinessStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum BookingMode {
+  INSTANT
+  REQUEST
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  DECLINED
+  CANCELED
+}
+
+enum AccountTokenPurpose {
+  VERIFY_EMAIL
+  RESET_PASSWORD
+  CUSTOMER_LINK
+  MEMBERSHIP_INVITE
+}
 
 enum Role {
   OWNER
@@ -73,14 +97,20 @@ enum Platform {
 // ---------------------------------------------------------------------------
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  name         String
-  passwordHash String
-  role         Role      @default(STAFF)
-  active       Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  sessions     Session[]
+  id              String               @id @default(cuid())
+  email           String               @unique
+  name            String
+  passwordHash    String
+  role            Role                 @default(STAFF)
+  active          Boolean              @default(true)
+  createdAt       DateTime             @default(now())
+  emailVerifiedAt DateTime?
+  sessions        Session[]
+  memberships     BusinessMembership[]
+  customers       Customer[]
+  accountTokens   AccountToken[]
+  mediaUploads    MediaUpload[]
+  aiRuns          AiRun[]
 }
 
 model Session {
@@ -93,26 +123,114 @@ model Session {
   expiresAt DateTime
 }
 
+model Business {
+  id                 String               @id @default(cuid())
+  slug               String               @unique
+  name               String
+  status             BusinessStatus       @default(DRAFT)
+  serviceArea        String               @default("")
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  settings           Settings?
+  memberships        BusinessMembership[]
+  customers          Customer[]
+  vehicles           Vehicle[]
+  services           Service[]
+  jobs               Job[]
+  photos             Photo[]
+  posts              SocialPost[]
+  templates          CaptionTemplate[]
+  bookings           Booking[]
+  availabilityBlocks AvailabilityBlock[]
+  mediaUploads       MediaUpload[]
+  aiRuns             AiRun[]
+  notifications      NotificationOutbox[]
+}
+
+model BusinessMembership {
+  businessId String
+  userId     String
+  role       Role     @default(STAFF)
+  acceptedAt DateTime?
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([businessId, userId])
+  @@index([userId, active])
+}
+
+model AccountToken {
+  id         String              @id @default(cuid())
+  tokenHash  String              @unique
+  purpose    AccountTokenPurpose
+  userId     String
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Only populated for an explicit customer invitation; never email matched.
+  businessId String?
+  customerId String?
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime            @default(now())
+
+  @@index([userId, purpose, expiresAt])
+}
+
+model RateLimitBucket {
+  key     String   @id
+  count   Int      @default(0)
+  resetAt DateTime
+}
+
+model NotificationOutbox {
+  id          String    @id @default(cuid())
+  businessId  String?
+  business    Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  to          String
+  subject     String
+  text        String
+  dedupeKey   String    @unique
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  availableAt DateTime  @default(now())
+  lockedAt    DateTime?
+  sentAt      DateTime?
+  lastError   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([status, availableAt])
+}
+
 // ---------------------------------------------------------------------------
 // Business settings — a singleton row with id 1, read through lib/ops/settings.ts
 // ---------------------------------------------------------------------------
 
 model Settings {
-  id                Int    @id @default(1)
-  businessName      String @default("Suds Auto Detailing")
-  phone             String @default("")
-  email             String @default("")
-  address           String @default("")
-  city              String @default("")
-  timezone          String @default("America/New_York")
-  instagramHandle   String @default("")
-  facebookPage      String @default("")
-  tiktokHandle      String @default("")
-  googleReviewUrl   String @default("")
+  id                Int         @id @default(autoincrement())
+  businessId        String      @unique
+  business          Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  bookingMode       BookingMode @default(INSTANT)
+  workingHours      Json        @default("[{\"day\":0,\"start\":\"09:00\",\"end\":\"17:00\"},{\"day\":1,\"start\":\"09:00\",\"end\":\"17:00\"},{\"day\":2,\"start\":\"09:00\",\"end\":\"17:00\"},{\"day\":3,\"start\":\"09:00\",\"end\":\"17:00\"},{\"day\":4,\"start\":\"09:00\",\"end\":\"17:00\"}]")
+  travelBufferMin   Int         @default(30)
+  leadTimeMin       Int         @default(120)
+  horizonDays       Int         @default(60)
+  cancellationHours Int         @default(24)
+  setupComplete     Boolean     @default(false)
+  businessName      String      @default("Suds Auto Detailing")
+  phone             String      @default("")
+  email             String      @default("")
+  address           String      @default("")
+  city              String      @default("")
+  timezone          String      @default("America/New_York")
+  instagramHandle   String      @default("")
+  facebookPage      String      @default("")
+  tiktokHandle      String      @default("")
+  googleReviewUrl   String      @default("")
   /// Default hashtag bank appended to suggested captions, space-separated.
-  hashtags          String @default("")
+  hashtags          String      @default("")
   /// Next invoice number to hand out; incremented atomically in ensureInvoice.
-  nextInvoiceNumber Int    @default(1001)
+  nextInvoiceNumber Int         @default(1001)
 }
 
 // ---------------------------------------------------------------------------
@@ -120,29 +238,44 @@ model Settings {
 // ---------------------------------------------------------------------------
 
 model Customer {
-  id        String    @id @default(cuid())
-  name      String
-  phone     String    @default("")
-  email     String    @default("")
-  address   String    @default("")
-  notes     String    @default("")
-  createdAt DateTime  @default(now())
-  vehicles  Vehicle[]
-  jobs      Job[]
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
+  name       String
+  phone      String    @default("")
+  email      String    @default("")
+  address    String    @default("")
+  notes      String    @default("")
+  createdAt  DateTime  @default(now())
+  userId     String?
+  user       User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  bookings   Booking[]
+  vehicles   Vehicle[]
+  jobs       Job[]
+
+  @@unique([businessId, userId])
+  @@unique([businessId, id])
+  @@index([businessId])
 }
 
 model Vehicle {
-  id         String   @id @default(cuid())
+  businessId String
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String    @id @default(cuid())
   customerId String
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer   Customer  @relation(fields: [businessId, customerId], references: [businessId, id], onDelete: Cascade)
   year       Int?
   make       String
   model      String
-  color      String   @default("")
-  plate      String   @default("")
-  notes      String   @default("")
-  createdAt  DateTime @default(now())
+  color      String    @default("")
+  plate      String    @default("")
+  notes      String    @default("")
+  createdAt  DateTime  @default(now())
+  bookings   Booking[]
   jobs       Job[]
+
+  @@unique([businessId, id])
+  @@index([businessId])
 }
 
 // ---------------------------------------------------------------------------
@@ -150,6 +283,8 @@ model Vehicle {
 // ---------------------------------------------------------------------------
 
 model Service {
+  businessId  String
+  business    Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
   id          String          @id @default(cuid())
   name        String
   description String          @default("")
@@ -159,6 +294,9 @@ model Service {
   active      Boolean         @default(true)
   sort        Int             @default(0)
   jobItems    JobItem[]
+
+  @@unique([businessId, id])
+  @@index([businessId])
 }
 
 // ---------------------------------------------------------------------------
@@ -166,32 +304,41 @@ model Service {
 // ---------------------------------------------------------------------------
 
 model Job {
-  id            String         @id @default(cuid())
-  customerId    String
-  customer      Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  vehicleId     String
-  vehicle       Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
-  status        JobStatus      @default(SCHEDULED)
-  scheduledAt   DateTime
-  durationMin   Int
-  notes         String         @default("")
-  internalNotes String         @default("")
-  completedAt   DateTime?
+  businessId      String
+  business        Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id              String         @id @default(cuid())
+  customerId      String
+  customer        Customer       @relation(fields: [businessId, customerId], references: [businessId, id], onDelete: Restrict)
+  vehicleId       String
+  vehicle         Vehicle        @relation(fields: [businessId, vehicleId], references: [businessId, id], onDelete: Restrict)
+  status          JobStatus      @default(SCHEDULED)
+  scheduledAt     DateTime
+  durationMin     Int
+  notes           String         @default("")
+  internalNotes   String         @default("")
+  locationAddress String         @default("")
+  waterPowerNotes String         @default("")
+  booking         Booking?
+  mediaUploads    MediaUpload[]
+  completedAt     DateTime?
   // Payment — a job is "paid" when paidAt is set.
-  paidAt        DateTime?
-  paymentMethod PaymentMethod?
-  tipCents      Int            @default(0)
-  discountCents Int            @default(0)
+  paidAt          DateTime?
+  paymentMethod   PaymentMethod?
+  tipCents        Int            @default(0)
+  discountCents   Int            @default(0)
   // Invoice — assigned once by ensureInvoice, then stable.
-  invoiceNumber Int?           @unique
-  invoicedAt    DateTime?
-  createdAt     DateTime       @default(now())
-  items         JobItem[]
-  photos        Photo[]
-  posts         SocialPost[]
+  invoiceNumber   Int?
+  invoicedAt      DateTime?
+  createdAt       DateTime       @default(now())
+  items           JobItem[]
+  photos          Photo[]
+  posts           SocialPost[]
 
-  @@index([scheduledAt])
+  @@unique([businessId, invoiceNumber])
+  @@unique([businessId, id])
+  @@index([businessId, scheduledAt])
   @@index([status])
+  @@index([businessId])
 }
 
 /// A line on a job: a snapshot of a catalog service at booking time, or a custom
@@ -215,19 +362,25 @@ model JobItem {
 // ---------------------------------------------------------------------------
 
 model Photo {
-  id           String      @id @default(cuid())
-  jobId        String?
-  job          Job?        @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  kind         PhotoKind   @default(OTHER)
+  businessId           String
+  business             Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id                   String      @id @default(cuid())
+  jobId                String?
+  job                  Job?        @relation(fields: [businessId, jobId], references: [businessId, id], onDelete: Cascade)
+  approvedForMarketing Boolean     @default(false)
+  kind                 PhotoKind   @default(OTHER)
   /// Stored file name on disk: `${id}.${ext}` — validated, never user input.
-  filename     String
-  originalName String      @default("")
-  contentType  String
-  bytes        Int
-  width        Int?
-  height       Int?
-  createdAt    DateTime    @default(now())
-  postPhotos   PostPhoto[]
+  filename             String
+  originalName         String      @default("")
+  contentType          String
+  bytes                Int
+  width                Int?
+  height               Int?
+  createdAt            DateTime    @default(now())
+  postPhotos           PostPhoto[]
+
+  @@unique([businessId, id])
+  @@index([businessId])
 }
 
 // ---------------------------------------------------------------------------
@@ -235,6 +388,8 @@ model Photo {
 // ---------------------------------------------------------------------------
 
 model SocialPost {
+  businessId   String
+  business     Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
   id           String      @id @default(cuid())
   caption      String      @default("")
   platforms    Platform[]
@@ -246,7 +401,9 @@ model SocialPost {
   createdAt    DateTime    @default(now())
   photos       PostPhoto[]
 
+  @@unique([businessId, id])
   @@index([status, scheduledFor])
+  @@index([businessId])
 }
 
 model PostPhoto {
@@ -260,9 +417,102 @@ model PostPhoto {
 }
 
 model CaptionTemplate {
-  id        String   @id @default(cuid())
-  name      String
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  name       String
   /// Body with {{tokens}} — see lib/captions.ts for the token list.
-  body      String
-  createdAt DateTime @default(now())
+  body       String
+  createdAt  DateTime @default(now())
+
+  @@unique([businessId, id])
+  @@index([businessId])
+}
+
+model Booking {
+  id               String        @id @default(cuid())
+  businessId       String
+  business         Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customerId       String
+  customer         Customer      @relation(fields: [businessId, customerId], references: [businessId, id], onDelete: Restrict)
+  vehicleId        String
+  vehicle          Vehicle       @relation(fields: [businessId, vehicleId], references: [businessId, id], onDelete: Restrict)
+  serviceSnapshots Json
+  scheduledAt      DateTime
+  durationMin      Int
+  status           BookingStatus @default(PENDING)
+  reservedUntil    DateTime?
+  idempotencyKey   String
+  address          String        @default("")
+  waterPowerNotes  String        @default("")
+  customerNotes    String        @default("")
+  priceCents       Int
+  jobId            String?       @unique
+  job              Job?          @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@unique([businessId, customerId, idempotencyKey])
+  @@index([businessId, status, scheduledAt])
+}
+
+model AvailabilityBlock {
+  id         String   @id @default(cuid())
+  businessId String
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  startsAt   DateTime
+  endsAt     DateTime
+  reason     String   @default("")
+
+  @@index([businessId, startsAt])
+}
+
+model MediaUpload {
+  id                   String     @id @default(cuid())
+  businessId           String
+  business             Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId               String
+  user                 User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind                 String
+  objectKey            String     @unique
+  contentType          String
+  sizeBytes            Int
+  originalName         String
+  status               String     @default("PENDING")
+  expiresAt            DateTime
+  approvedForMarketing Boolean    @default(false)
+  jobId                String?
+  job                  Job?       @relation(fields: [businessId, jobId], references: [businessId, id], onDelete: Cascade)
+  photoKind            PhotoKind?
+  createdAt            DateTime   @default(now())
+  updatedAt            DateTime   @updatedAt
+
+  @@index([businessId, status])
+}
+
+model AiRun {
+  id             String    @id @default(cuid())
+  businessId     String
+  business       Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind           String
+  status         String    @default("QUEUED")
+  request        Json
+  output         Json?
+  provider       String
+  providerId     String?
+  objectKey      String?
+  error          String?
+  attempts       Int       @default(0)
+  nextAttemptAt  DateTime  @default(now())
+  lockedAt       DateTime?
+  submittedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  idempotencyKey String
+
+  @@unique([businessId, idempotencyKey])
+  @@index([businessId, status, nextAttemptAt])
+  @@index([status, nextAttemptAt])
 }

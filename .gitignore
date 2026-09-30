@@ -1,5 +1,6 @@
 node_modules/
 .next/
+.vercel/
 out/
 build/
 dist/
@@ -20,4 +21,5 @@ data/uploads/
 *.tsbuildinfo
 next-env.d.ts
 coverage/
+.backups/
 .DS_Store

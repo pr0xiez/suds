@@ -27,8 +27,8 @@ const INTENTS = ['draft', 'schedule', 'posted'] as const
 
 /** Create/update from the PostComposer client component (useActionState). */
 export async function savePostAction(_prev: FormState | null, fd: FormData): Promise<FormState> {
-  await requireUser()
-  const settings = await getSettings()
+  const user = await requireUser()
+  const settings = await getSettings(user.businessId)
   const postId = fdString(fd, 'postId')
   let savedId: string
   let intent: (typeof INTENTS)[number]
@@ -69,12 +69,15 @@ export async function savePostAction(_prev: FormState | null, fd: FormData): Pro
       jobId: fdString(fd, 'jobId') || null,
       photoIds,
     }
-    const post = postId ? await updatePost(postId, input) : await createPost(input)
+    const post = postId
+      ? await updatePost(user.businessId, postId, input)
+      : await createPost(user.businessId, input)
     savedId = post.id
 
-    if (intent === 'schedule' && scheduledFor) await schedulePost(savedId, scheduledFor)
-    else if (intent === 'posted') await markPosted(savedId)
-    else if (post.status !== 'DRAFT') await revertToDraft(savedId)
+    if (intent === 'schedule' && scheduledFor)
+      await schedulePost(user.businessId, savedId, scheduledFor)
+    else if (intent === 'posted') await markPosted(user.businessId, savedId)
+    else if (post.status !== 'DRAFT') await revertToDraft(user.businessId, savedId)
   } catch (err) {
     if (err instanceof z.ZodError) {
       return { error: err.issues[0]?.message ?? 'Check the form and try again' }
@@ -86,24 +89,24 @@ export async function savePostAction(_prev: FormState | null, fd: FormData): Pro
 }
 
 export async function markPostedAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const id = fdString(fd, 'id')
-  await markPosted(id)
+  await markPosted(user.businessId, id)
   revalidatePath('/', 'layout')
   redirect(safeBackPath(fdString(fd, 'back'), '/social'))
 }
 
 export async function revertToDraftAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const id = fdString(fd, 'id')
-  await revertToDraft(id)
+  await revertToDraft(user.businessId, id)
   revalidatePath('/', 'layout')
   redirect(`/social/${id}`)
 }
 
 export async function deletePostAction(fd: FormData): Promise<void> {
-  await requireUser()
-  await deletePost(fdString(fd, 'id'))
+  const user = await requireUser()
+  await deletePost(user.businessId, fdString(fd, 'id'))
   revalidatePath('/', 'layout')
   redirect('/social')
 }

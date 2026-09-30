@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { addDays, todayWall, wallTimeToUtc } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
 import { jobTotalCents } from '@/lib/money'
@@ -16,6 +17,7 @@ import { getSettings } from '@/lib/ops/settings'
 import { createPostFromJob, deletePost, markPosted, schedulePost } from '@/lib/ops/social'
 import { encodePng } from '@/lib/png'
 import { readUploadFile } from '@/lib/uploads'
+import { cleanupFixtureBusiness } from './fixtures'
 
 /**
  * End-to-end exercise of the ops layer against the real database — the flows a
@@ -23,6 +25,7 @@ import { readUploadFile } from '@/lib/uploads'
  * is safe to run against a seeded dev database.
  */
 
+const businessId = `smoke${randomBytes(8).toString('hex')}`
 let step = ''
 function log(next: string) {
   step = next
@@ -36,20 +39,28 @@ function assert(condition: unknown, message: string): asserts condition {
 async function main() {
   console.log('suds smoke — ops against the dev database\n')
 
+  await prisma.business.create({
+    data: {
+      id: businessId,
+      slug: `suds-test-${businessId}`,
+      name: 'Smoke Test',
+      settings: { create: { timezone: 'America/New_York', travelBufferMin: 0 } },
+    },
+  })
   log('settings')
-  const settings = await getSettings()
-  assert(settings.id === 1, 'settings singleton missing')
+  const settings = await getSettings(businessId)
+  assert(settings.businessId === businessId, 'business settings missing')
   const tz = settings.timezone
 
   log('customer + vehicle')
-  const customer = await createCustomer({
+  const customer = await createCustomer(businessId, {
     name: 'Smoke Test',
     phone: '(000) 000-0000',
     email: 'smoke@example.com',
     address: '',
     notes: 'created by scripts/smoke.ts — safe to delete',
   })
-  const vehicle = await addVehicle(customer.id, {
+  const vehicle = await addVehicle(businessId, customer.id, {
     year: 2020,
     make: 'Mazda',
     model: 'MX-5',
@@ -59,7 +70,7 @@ async function main() {
   })
 
   log('service')
-  const service = await createService({
+  const service = await createService(businessId, {
     name: 'Smoke Detail',
     description: '',
     category: 'EXTERIOR',
@@ -71,7 +82,7 @@ async function main() {
 
   log('create job (catalog snapshot + custom line)')
   const when = wallTimeToUtc({ ...addDays(todayWall(tz), 1), hour: 11, minute: 30 }, tz)
-  const job = await createJob({
+  const job = await createJob(businessId, {
     customerId: customer.id,
     vehicleId: vehicle.id,
     scheduledAt: when,
@@ -91,39 +102,49 @@ async function main() {
   assert(jobTotalCents(jobFull) === 12300 + 2500 - 800, `total mismatch: ${jobTotalCents(jobFull)}`)
 
   log('customer delete refused while jobs exist')
-  const refusal = await deleteCustomer(customer.id)
+  const refusal = await deleteCustomer(businessId, customer.id)
   assert(refusal.error, 'delete should have been refused')
 
   log('status transitions')
-  await setJobStatus(job.id, 'IN_PROGRESS')
-  const completed = await setJobStatus(job.id, 'COMPLETED')
+  await setJobStatus(businessId, job.id, 'IN_PROGRESS')
+  const completed = await setJobStatus(businessId, job.id, 'COMPLETED')
   assert(completed.completedAt !== null, 'completedAt not set')
   let threw = false
   try {
-    await setJobStatus(job.id, 'IN_PROGRESS')
+    await setJobStatus(businessId, job.id, 'IN_PROGRESS')
   } catch {
     threw = true
   }
   assert(threw, 'COMPLETED → IN_PROGRESS should be rejected')
 
   log('payment')
-  const paid = await recordPayment(job.id, { method: 'VENMO', tipCents: 1500 })
+  const paid = await recordPayment(businessId, job.id, { method: 'VENMO', tipCents: 1500 })
   assert(paid.paidAt !== null && paid.tipCents === 1500, 'payment not recorded')
 
   log('invoice numbering is stable')
-  const first = await ensureInvoice(job.id)
-  const second = await ensureInvoice(job.id)
+  const first = await ensureInvoice(businessId, job.id)
+  const second = await ensureInvoice(businessId, job.id)
   assert(first === second, `invoice number changed: ${first} → ${second}`)
 
   log('photo upload (generated PNG, dimensions parsed)')
   const png = encodePng(320, 240, (x, y) => [x % 256, y % 256, 128])
-  const before = await addPhoto({ jobId: job.id, kind: 'BEFORE', data: png, originalName: 'b.png' })
-  const after = await addPhoto({ jobId: job.id, kind: 'AFTER', data: png, originalName: 'a.png' })
+  const before = await addPhoto(businessId, {
+    jobId: job.id,
+    kind: 'BEFORE',
+    data: png,
+    originalName: 'b.png',
+  })
+  const after = await addPhoto(businessId, {
+    jobId: job.id,
+    kind: 'AFTER',
+    data: png,
+    originalName: 'a.png',
+  })
   assert(before.width === 320 && before.height === 240, 'dimensions not parsed')
   assert((await readUploadFile(before.filename)) !== null, 'file missing on disk')
   let rejected = false
   try {
-    await addPhoto({
+    await addPhoto(businessId, {
       jobId: job.id,
       kind: 'OTHER',
       data: Buffer.from('not an image'),
@@ -134,8 +155,12 @@ async function main() {
   }
   assert(rejected, 'non-image upload should be rejected')
 
+  await prisma.photo.updateMany({
+    where: { businessId, id: { in: [before.id, after.id] } },
+    data: { approvedForMarketing: true },
+  })
   log('post from job (after leads, caption suggested)')
-  const post = await createPostFromJob(job.id)
+  const post = await createPostFromJob(businessId, job.id)
   const postFull = await prisma.socialPost.findUniqueOrThrow({
     where: { id: post.id },
     include: { photos: { include: { photo: true }, orderBy: { sort: 'asc' } } },
@@ -146,14 +171,15 @@ async function main() {
 
   log('schedule + mark posted')
   await schedulePost(
+    businessId,
     post.id,
     wallTimeToUtc({ ...addDays(todayWall(tz), 2), hour: 18, minute: 0 }, tz),
   )
-  const posted = await markPosted(post.id)
+  const posted = await markPosted(businessId, post.id)
   assert(posted.status === 'POSTED' && posted.postedAt !== null, 'markPosted failed')
 
   log('update job (reschedule + re-snapshot)')
-  await updateJob(job.id, {
+  await updateJob(businessId, job.id, {
     customerId: customer.id,
     vehicleId: vehicle.id,
     scheduledAt: new Date(when.getTime() + 3600000),
@@ -171,25 +197,33 @@ async function main() {
   assert(updated.items.length === 1 && updated.durationMin === 120, 'update did not replace items')
 
   log('cleanup')
-  await deletePost(post.id)
+  await deletePost(businessId, post.id)
   const beforeFilename = before.filename
-  await deleteJob(job.id)
+  await deleteJob(businessId, job.id)
   assert(
     (await readUploadFile(beforeFilename)) === null,
     'photo file should be gone after job delete',
   )
-  await deleteVehicle(vehicle.id)
-  const finalDelete = await deleteCustomer(customer.id)
+  await deleteVehicle(businessId, vehicle.id)
+  const finalDelete = await deleteCustomer(businessId, customer.id)
   assert(!finalDelete.error, 'customer delete should succeed once jobs are gone')
-  await deleteService(service.id)
+  await deleteService(businessId, service.id)
 
   console.log('\nPASS — all smoke steps green')
 }
 
 main().then(
-  () => process.exit(0),
-  (error) => {
+  async () => {
+    await cleanupFixtureBusiness(businessId)
+    await prisma.$disconnect()
+  },
+  async (error) => {
     console.error('\nFAIL:', error)
-    process.exit(1)
+    try {
+      await cleanupFixtureBusiness(businessId)
+    } finally {
+      await prisma.$disconnect()
+      process.exitCode = 1
+    }
   },
 )

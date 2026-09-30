@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { deletePhotoAction, setPhotoKindAction } from '@/app/actions/photos'
+import { deletePhotoAction, setPhotoApprovalAction, setPhotoKindAction } from '@/app/actions/photos'
 import { ConfirmSubmit } from '@/components/ConfirmSubmit'
 import { PhotoKindBadge } from '@/components/ui'
 import type { PhotoKind } from '@/lib/generated/prisma/enums'
@@ -14,11 +14,13 @@ export function PhotoTile({
   photo,
   back,
   footer,
+  canApprove = false,
 }: {
-  photo: { id: string; kind: PhotoKind; originalName: string }
+  photo: { id: string; kind: PhotoKind; originalName: string; approvedForMarketing?: boolean }
   /** Path to land on after a mutation — usually the page the tile is on. */
   back: string
   footer?: React.ReactNode
+  canApprove?: boolean
 }) {
   return (
     <figure className="group relative overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
@@ -64,6 +66,22 @@ export function PhotoTile({
           </ConfirmSubmit>
         </form>
       </div>
+      {canApprove ? (
+        <form action={setPhotoApprovalAction} className="bg-white px-2 py-2">
+          <input type="hidden" name="id" value={photo.id} />
+          <input type="hidden" name="back" value={back} />
+          <input type="hidden" name="approved" value={photo.approvedForMarketing ? '0' : '1'} />
+          <button type="submit" className="text-left text-xs font-medium text-emerald-800">
+            {photo.approvedForMarketing
+              ? '✓ Approved for marketing · revoke'
+              : 'Approve for marketing'}
+          </button>
+        </form>
+      ) : (
+        <p className="bg-white px-2 py-2 text-xs text-slate-500">
+          {photo.approvedForMarketing ? 'Approved for marketing' : 'Private photo'}
+        </p>
+      )}
       {footer}
     </figure>
   )

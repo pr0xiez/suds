@@ -1,7 +1,8 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyPassword } from '@/lib/auth/password'
-import { allowAttempt, resetAttempts } from '@/lib/auth/rateLimit'
+import { consumeRateLimit } from '@/lib/auth/persistentRateLimit'
 import { createSessionRecord, SESSION_COOKIE_NAME, sessionCookieOptions } from '@/lib/auth/session'
+import { businessUserFor, safeAuthNext } from '@/lib/business'
 import { prisma } from '@/lib/db/client'
 import { sameOriginOk } from '@/lib/http'
 
@@ -10,12 +11,19 @@ import { sameOriginOk } from '@/lib/http'
 const DECOY_HASH = `scrypt$16384$8$1$${Buffer.alloc(16).toString('base64')}$${Buffer.alloc(64).toString('base64')}`
 
 export async function POST(req: NextRequest) {
-  const fail = (code: string) =>
-    NextResponse.redirect(new URL(`/login?error=${code}`, req.url), 303)
+  let next = '/dashboard'
+  const fail = (code: string) => {
+    const url = new URL('/login', req.url)
+    url.searchParams.set('error', code)
+    url.searchParams.set('next', next)
+    return NextResponse.redirect(url, 303)
+  }
 
   if (!sameOriginOk(req)) return fail('1')
 
+  if (Number(req.headers.get('content-length') ?? 0) > 16384) return fail('1')
   const form = await req.formData()
+  next = safeAuthNext(String(form.get('next') ?? ''), '')
   const email = String(form.get('email') ?? '')
     .trim()
     .toLowerCase()
@@ -24,15 +32,22 @@ export async function POST(req: NextRequest) {
 
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local'
   const rateKey = `${ip}:${email}`
-  if (!allowAttempt(rateKey)) return fail('rate')
+  if (
+    !(await consumeRateLimit(`login:${rateKey}`)) ||
+    !(await consumeRateLimit(`login-ip:${ip}`, 40))
+  )
+    return fail('rate')
 
   const user = await prisma.user.findUnique({ where: { email } })
   const ok = await verifyPassword(password, user?.passwordHash ?? DECOY_HASH)
   if (!user?.active || !ok) return fail('1')
 
-  resetAttempts(rateKey)
   const token = await createSessionRecord(user.id)
-  const res = NextResponse.redirect(new URL('/dashboard', req.url), 303)
+  const membership = await businessUserFor(user)
+  const destination = user.emailVerifiedAt
+    ? safeAuthNext(next, membership ? '/dashboard' : '/portal')
+    : `/verify?next=${encodeURIComponent(safeAuthNext(next, membership ? '/dashboard' : '/portal'))}`
+  const res = NextResponse.redirect(new URL(destination, req.url), 303)
   res.cookies.set(SESSION_COOKIE_NAME, token, sessionCookieOptions())
   return res
 }

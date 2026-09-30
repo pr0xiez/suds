@@ -6,6 +6,8 @@ const TABS = [
   { href: '/settings/services', label: 'Services' },
   { href: '/settings/templates', label: 'Caption templates' },
   { href: '/settings/users', label: 'Users', ownerOnly: true },
+  { href: '/availability', label: 'Availability', ownerOnly: true },
+  { href: '/settings/operations', label: 'Operations', ownerOnly: true },
 ]
 
 export function SettingsNav({ current, isOwner }: { current: string; isOwner: boolean }) {

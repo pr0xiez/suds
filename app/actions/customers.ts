@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { requireUser } from '@/lib/auth/session'
+import { inviteCustomerPortal } from '@/lib/auth/accounts'
+import { requireOwner, requireUser } from '@/lib/auth/session'
 import { fdString, friendlyError } from '@/lib/forms'
 import {
   addVehicle,
@@ -62,51 +63,51 @@ function readVehicle(fd: FormData) {
 }
 
 export async function createCustomerAction(fd: FormData): Promise<void> {
-  await requireUser()
-  const customer = await createCustomer(readCustomer(fd))
+  const user = await requireUser()
+  const customer = await createCustomer(user.businessId, readCustomer(fd))
   revalidatePath('/', 'layout')
   redirect(`/customers/${customer.id}`)
 }
 
 export async function updateCustomerAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const id = fdString(fd, 'id')
-  await updateCustomer(id, readCustomer(fd))
+  await updateCustomer(user.businessId, id, readCustomer(fd))
   revalidatePath('/', 'layout')
   redirect(`/customers/${id}?saved=1`)
 }
 
 export async function deleteCustomerAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const id = fdString(fd, 'id')
-  const result = await deleteCustomer(id)
+  const result = await deleteCustomer(user.businessId, id)
   revalidatePath('/', 'layout')
   if (result.error) redirect(`/customers/${id}?error=${encodeURIComponent(result.error)}`)
   redirect('/customers')
 }
 
 export async function addVehicleAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const customerId = fdString(fd, 'customerId')
-  await addVehicle(customerId, readVehicle(fd))
+  await addVehicle(user.businessId, customerId, readVehicle(fd))
   revalidatePath('/', 'layout')
   redirect(`/customers/${customerId}`)
 }
 
 export async function updateVehicleAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const customerId = fdString(fd, 'customerId')
-  await updateVehicle(fdString(fd, 'id'), readVehicle(fd))
+  await updateVehicle(user.businessId, fdString(fd, 'id'), readVehicle(fd))
   revalidatePath('/', 'layout')
   redirect(`/customers/${customerId}`)
 }
 
 export async function deleteVehicleAction(fd: FormData): Promise<void> {
-  await requireUser()
+  const user = await requireUser()
   const customerId = fdString(fd, 'customerId')
   let error: string | null = null
   try {
-    const result = await deleteVehicle(fdString(fd, 'id'))
+    const result = await deleteVehicle(user.businessId, fdString(fd, 'id'))
     error = result.error ?? null
   } catch (err) {
     error = friendlyError(err)
@@ -114,4 +115,18 @@ export async function deleteVehicleAction(fd: FormData): Promise<void> {
   revalidatePath('/', 'layout')
   if (error) redirect(`/customers/${customerId}?error=${encodeURIComponent(error)}`)
   redirect(`/customers/${customerId}`)
+}
+
+export async function inviteCustomerPortalAction(fd: FormData): Promise<void> {
+  const user = await requireOwner()
+  const id = fdString(fd, 'id')
+  let error: string | null = null
+  try {
+    await inviteCustomerPortal(user.businessId, id)
+  } catch (err) {
+    error = friendlyError(err)
+  }
+  revalidatePath('/', 'layout')
+  if (error) redirect(`/customers/${id}?error=${encodeURIComponent(error)}`)
+  redirect(`/customers/${id}?invited=1`)
 }

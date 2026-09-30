@@ -31,8 +31,8 @@ export default async function SocialPage({
 }: {
   searchParams: Promise<{ month?: string }>
 }) {
-  await requireUser()
-  const settings = await getSettings()
+  const user = await requireUser()
+  const settings = await getSettings(user.businessId)
   const tz = settings.timezone
   const now = new Date()
   const today = todayWall(tz, now)
@@ -56,6 +56,7 @@ export default async function SocialPage({
   const [monthPosts, drafts, scheduled, posted] = await Promise.all([
     prisma.socialPost.findMany({
       where: {
+        businessId: user.businessId,
         OR: [
           { scheduledFor: { gte: gridStart, lt: gridEnd } },
           { scheduledFor: null, postedAt: { gte: gridStart, lt: gridEnd } },
@@ -64,17 +65,17 @@ export default async function SocialPage({
       orderBy: { scheduledFor: 'asc' },
     }),
     prisma.socialPost.findMany({
-      where: { status: 'DRAFT' },
+      where: { businessId: user.businessId, status: 'DRAFT' },
       orderBy: { createdAt: 'desc' },
       take: 8,
     }),
     prisma.socialPost.findMany({
-      where: { status: 'SCHEDULED' },
+      where: { businessId: user.businessId, status: 'SCHEDULED' },
       orderBy: { scheduledFor: 'asc' },
       take: 12,
     }),
     prisma.socialPost.findMany({
-      where: { status: 'POSTED' },
+      where: { businessId: user.businessId, status: 'POSTED' },
       orderBy: { postedAt: 'desc' },
       take: 5,
     }),
@@ -112,6 +113,9 @@ export default async function SocialPage({
           </Link>
           <Link href="/social/new" className={btnPrimary}>
             + New post
+          </Link>
+          <Link href="/social/shorts" className={btnSecondary}>
+            Edit a short
           </Link>
         </div>
       </div>

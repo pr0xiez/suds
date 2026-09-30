@@ -104,13 +104,14 @@ export default async function ServicesSettingsPage({
   const user = await requireUser()
   const { error } = await searchParams
   const services = await prisma.service.findMany({
+    where: { businessId: user.businessId },
     orderBy: [{ active: 'desc' }, { sort: 'asc' }, { name: 'asc' }],
   })
 
   return (
     <div className="max-w-3xl">
       <PageHeader title="Settings" />
-      <SettingsNav current="/settings/services" isOwner={user.role === 'OWNER'} />
+      <SettingsNav current="/settings/services" isOwner={user.businessRole === 'OWNER'} />
       <ErrorBanner message={error} />
 
       <Card title="Add a service" className="mb-6">

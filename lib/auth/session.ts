@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { cache } from 'react'
+import { type BusinessUser, businessUserFor } from '@/lib/business'
 import { prisma } from '@/lib/db/client'
 import type { User } from '@/lib/generated/prisma/client'
 
@@ -66,16 +67,31 @@ export const getSessionUser = cache(async (): Promise<User | null> => {
   return session.user
 })
 
-/** Page/action guard: the signed-in user, or a redirect to /login. */
-export async function requireUser(): Promise<User> {
+export const getBusinessSessionUser = cache(async (): Promise<BusinessUser | null> => {
   const user = await getSessionUser()
-  if (!user) redirect('/login')
+  const selected = (await cookies()).get('suds_business')?.value
+  return (selected ? await businessUserFor(user, selected) : null) ?? (await businessUserFor(user))
+})
+
+/** Authenticated business membership; customer identities have a separate portal. */
+export async function requireUser(): Promise<BusinessUser> {
+  const identity = await getSessionUser()
+  if (!identity) redirect('/login')
+  if (!identity.emailVerifiedAt) redirect('/verify')
+  const user = await getBusinessSessionUser()
+  if (!user) redirect('/portal')
   return user
 }
 
-/** Owner-only surfaces (user management). Staff get bounced to the dashboard. */
-export async function requireOwner(): Promise<User> {
+export async function requireOwner(): Promise<BusinessUser> {
   const user = await requireUser()
-  if (user.role !== 'OWNER') redirect('/dashboard')
+  if (user.businessRole !== 'OWNER') redirect('/dashboard')
+  return user
+}
+
+export async function requireVerifiedIdentity(): Promise<User> {
+  const user = await getSessionUser()
+  if (!user) redirect('/login')
+  if (!user.emailVerifiedAt) redirect('/verify')
   return user
 }

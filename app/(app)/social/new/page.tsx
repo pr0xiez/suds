@@ -1,22 +1,35 @@
 import { PostComposer } from '@/components/PostComposer'
 import { PageHeader } from '@/components/ui'
-import { requireUser } from '@/lib/auth/session'
+import { loadMarketingPostBrief } from '@/lib/ai/marketingPosts'
+import { requireOwner, requireUser } from '@/lib/auth/session'
 import { prisma } from '@/lib/db/client'
 import { getSettings } from '@/lib/ops/settings'
 import { buildCaptionContext } from '@/lib/ops/social'
 
 export const metadata = { title: 'New post' }
 
-export default async function NewPostPage() {
-  await requireUser()
+export default async function NewPostPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ aiRunId?: string }>
+}) {
+  const user = await requireUser()
+  const query = await searchParams
+  const initialBrief = query.aiRunId
+    ? await loadMarketingPostBrief((await requireOwner()).businessId, query.aiRunId)
+    : null
   const [settings, photos, templates] = await Promise.all([
-    getSettings(),
+    getSettings(user.businessId),
     prisma.photo.findMany({
+      where: { businessId: user.businessId, approvedForMarketing: true },
       include: { job: { include: { vehicle: true } } },
       orderBy: { createdAt: 'desc' },
       take: 200,
     }),
-    prisma.captionTemplate.findMany({ orderBy: { name: 'asc' } }),
+    prisma.captionTemplate.findMany({
+      where: { businessId: user.businessId },
+      orderBy: { name: 'asc' },
+    }),
   ])
 
   return (
@@ -35,11 +48,11 @@ export default async function NewPostPage() {
         hashtags={settings.hashtags}
         initial={{
           postId: '',
-          caption: '',
-          platforms: ['INSTAGRAM', 'FACEBOOK'],
+          caption: initialBrief?.caption ?? '',
+          platforms: initialBrief?.platforms ?? ['INSTAGRAM', 'FACEBOOK'],
           scheduledFor: '',
-          jobId: '',
-          photoIds: [],
+          jobId: initialBrief?.jobId ?? '',
+          photoIds: initialBrief?.photoIds ?? [],
         }}
       />
     </div>

@@ -26,8 +26,8 @@ import { getSettings } from '@/lib/ops/settings'
 export const metadata = { title: 'Dashboard' }
 
 export default async function DashboardPage() {
-  await requireUser()
-  const settings = await getSettings()
+  const user = await requireUser()
+  const settings = await getSettings(user.businessId)
   const tz = settings.timezone
   const now = new Date()
   const today = todayWall(tz, now)
@@ -35,32 +35,51 @@ export default async function DashboardPage() {
   const monthStart = wallTimeToUtc({ ...today, day: 1, hour: 0, minute: 0 }, tz)
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
 
-  const [todayJobs, paidThisMonth, unpaid, queuedPosts, draftCount, photoGaps] = await Promise.all([
+  const [
+    todayJobs,
+    paidThisMonth,
+    unpaid,
+    queuedPosts,
+    draftCount,
+    photoGaps,
+    business,
+    requestCount,
+  ] = await Promise.all([
     prisma.job.findMany({
-      where: { scheduledAt: { gte: dayStart, lt: dayEnd } },
+      where: { businessId: user.businessId, scheduledAt: { gte: dayStart, lt: dayEnd } },
       include: { customer: true, vehicle: true, items: true },
       orderBy: { scheduledAt: 'asc' },
     }),
-    prisma.job.findMany({ where: { paidAt: { gte: monthStart } }, include: { items: true } }),
     prisma.job.findMany({
-      where: { status: 'COMPLETED', paidAt: null },
+      where: { businessId: user.businessId, paidAt: { gte: monthStart } },
+      include: { items: true },
+    }),
+    prisma.job.findMany({
+      where: { businessId: user.businessId, status: 'COMPLETED', paidAt: null },
       include: { customer: true, items: true },
       orderBy: { completedAt: 'desc' },
       take: 8,
     }),
     prisma.socialPost.findMany({
-      where: { status: 'SCHEDULED' },
+      where: { businessId: user.businessId, status: 'SCHEDULED' },
       include: { photos: { include: { photo: true }, orderBy: { sort: 'asc' } } },
       orderBy: { scheduledFor: 'asc' },
       take: 10,
     }),
-    prisma.socialPost.count({ where: { status: 'DRAFT' } }),
+    prisma.socialPost.count({ where: { businessId: user.businessId, status: 'DRAFT' } }),
     prisma.job.findMany({
-      where: { status: 'COMPLETED', completedAt: { gte: weekAgo }, photos: { none: {} } },
+      where: {
+        businessId: user.businessId,
+        status: 'COMPLETED',
+        completedAt: { gte: weekAgo },
+        photos: { none: {} },
+      },
       include: { customer: true, vehicle: true },
       orderBy: { completedAt: 'desc' },
       take: 5,
     }),
+    prisma.business.findUniqueOrThrow({ where: { id: user.businessId } }),
+    prisma.booking.count({ where: { businessId: user.businessId, status: 'PENDING' } }),
   ])
 
   const activeToday = todayJobs.filter((job) => job.status !== 'CANCELED')
@@ -83,6 +102,58 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
         <p className="mt-1 text-sm text-slate-500">{formatFullDate(now, tz)}</p>
       </div>
+
+      {user.businessRole === 'OWNER' &&
+        (!settings.setupComplete || business.status !== 'PUBLISHED') && (
+          <div className="mb-6 rounded-xl border border-cyan-200 bg-cyan-50 p-5">
+            <h2 className="font-semibold text-slate-900">Get ready for your first booking</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              Set up your services, hours, and service area, then publish your booking page.
+            </p>
+            <Link
+              href="/onboarding"
+              className="mt-3 inline-block font-semibold text-cyan-800 hover:underline"
+            >
+              Continue business setup →
+            </Link>
+          </div>
+        )}
+      {requestCount > 0 && (
+        <Link
+          href="/bookings"
+          className="mb-6 block rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-medium text-amber-900"
+        >
+          {requestCount} booking request{requestCount === 1 ? '' : 's'} waiting for a decision →
+        </Link>
+      )}
+      {user.businessRole === 'OWNER' && (
+        <div className="mb-6 rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold text-slate-900">Grow your business</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Choose a marketing task and prepare a campaign with the Suds assistant.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-3 text-sm font-medium text-cyan-800">
+            <Link
+              href="/marketing?task=job"
+              className="rounded-lg border border-cyan-200 px-3 py-2 hover:bg-cyan-50"
+            >
+              Show a finished job
+            </Link>
+            <Link
+              href="/marketing?task=slots"
+              className="rounded-lg border border-cyan-200 px-3 py-2 hover:bg-cyan-50"
+            >
+              Fill an open appointment
+            </Link>
+            <Link
+              href="/marketing?task=intro"
+              className="rounded-lg border border-cyan-200 px-3 py-2 hover:bg-cyan-50"
+            >
+              Introduce your business
+            </Link>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile

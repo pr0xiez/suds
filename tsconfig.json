@@ -31,5 +31,5 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "lib/generated"]
+  "exclude": ["node_modules", "lib/generated", ".backups", ".vercel"]
 }

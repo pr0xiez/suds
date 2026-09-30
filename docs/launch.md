@@ -25,10 +25,11 @@ and `iad1` align the web functions with the existing Neon region. The Pro plan
 supports the every-minute cron in `vercel.json`; builds never apply migrations.
 
 Cloudflare R2 Standard is selected for media. The authenticated Cloudflare account
-is `alex@ahall.tech`; enabling R2 in its dashboard is pending before bucket
-creation and credentials can be configured. Transactional email and the paid
-AI providers also need credentials. Deployment and live service checks are
-recorded in [verification.md](verification.md).
+is `alex@ahall.tech`; R2 is enabled and private production/preview buckets are
+created with exact-origin CORS and one-day pending-upload cleanup. Bucket-scoped
+S3 credentials are still needed before the app can store or serve media.
+Transactional email and the paid AI providers also need credentials. Deployment
+and live service checks are recorded in [verification.md](verification.md).
 
 Start with an invite-only solo-detailer pilot; `SIGNUP_CODE` can restrict owner
 signup while verified customers can still register from a booking page.

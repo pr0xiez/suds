@@ -1,9 +1,11 @@
 # Launch implementation verification
 
 Checked September 30, 2026, with Linux-native Node 24.18.0 and the installed
-Next.js 16.3.1 / Prisma 7.9.1 packages. The current application database was not
-reset, seeded, or migrated. Database checks used isolated schemas and fictional
-records, and smoke fixtures clean up their own records.
+Next.js 16.3.1 / Prisma 7.9.1 packages. Initial checks used isolated schemas and
+fictional records; smoke fixtures clean up their own records. The production
+migration was later rehearsed on a separate Neon branch and applied to the
+existing database after every original field passed a preservation comparison.
+The production database was never reset or seeded.
 
 ## Passed
 
@@ -65,9 +67,27 @@ See [full-demo.md](full-demo.md) for the entry point and limits.
 
 ## Live connections
 
-R2 credentials and browser CORS, actual OpenAI/Submagic/Shotstack requests and
-output host confirmation, transactional email delivery, scheduled worker hosting,
-container deployment, and backup restoration were not exercised. No paid API
-calls, emails, or social publication occurred. Preflight correctly reports these
-connections as missing. See [launch.md](launch.md) to configure and verify them
-before inviting pilot users.
+The private GitHub repository is connected to Vercel and the production deployment
+is ready at `https://suds-hall3aducgmailcoms-projects.vercel.app`. GitHub Actions
+passed all unit, type, lint, build, migration and smoke gates for commit `a8140dc`.
+Sixteen owner screens opened successfully in a browser using a temporary session
+that was removed afterward. Unauthenticated owner/customer pages redirected to
+login, all demo routes returned 404, database health returned 200, and the worker
+rejected unauthenticated calls. An authenticated worker tick returned 200 and
+processed no AI jobs or email. Vercel registered the every-minute cron.
+
+The existing Neon main branch retains all original business records. The backup
+branch and separate preview/rehearsal branch are retained. The production owner
+is `alex@ahall.tech`; known demo logins are disabled, and its business remains a
+draft until the owner completes setup and publishes it.
+
+Cloudflare OAuth identity and R2 activation were verified. Both private buckets,
+exact-origin CORS, disabled public URLs, and one-day `pending/` lifecycle rules
+were verified through the API. The production media migration dry run found 12
+local photos with none missing. Actual S3 copying and browser uploads still await
+bucket-scoped credentials.
+
+Actual OpenAI/Submagic/Shotstack requests and output-host confirmation,
+transactional email delivery, container deployment, and backup restoration have
+not been exercised. No paid API calls, emails, or social publication occurred.
+See [launch.md](launch.md) for the remaining connections before inviting users.

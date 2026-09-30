@@ -5,10 +5,13 @@ R2 bucket for original photos, uploaded clips, and rendered shorts. The storage
 adapter supports S3-compatible endpoints, so the app can also use Amazon S3.
 Google Workspace can provide an optional export or backup destination later.
 The owner confirmed R2 after comparing it with Vercel Blob on the existing Pro
-plan. Cloudflare's skills and five MCP servers are installed, and OAuth was
-verified as `alex@ahall.tech`. Its API requires R2 dashboard activation before
-bucket creation; that activation and the storage connection are pending. Google
-Drive remains an optional future export or backup destination.
+plan. Cloudflare's skills and five MCP servers are installed, and the main
+Cloudflare OAuth connection was verified as `alex@ahall.tech`. R2 is enabled.
+The Standard buckets `suds-media-production` and `suds-media-preview` are created
+with public access disabled, CORS limited to the production app origin, and a
+one-day deletion rule for `pending/`. Separate bucket-scoped S3 credentials are
+still required to connect the app; OAuth cannot issue them with its current
+permissions. Google Drive remains an optional future export or backup destination.
 
 ## Options
 

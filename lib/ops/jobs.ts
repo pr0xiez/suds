@@ -6,6 +6,7 @@ import {
   type BookingView,
   bookingViewChanged,
   type CustomLineInput,
+  deriveDuration,
   type JobLine,
   type LineSnapshot,
   reconcileJobLines,
@@ -63,12 +64,6 @@ async function buildItems(
     input.customLines,
     new Map(services.map((service) => [service.id, service])),
   )
-}
-
-function deriveDuration(override: number | null, items: readonly JobLine[]): number {
-  if (override !== null && override >= 15) return override
-  const sum = items.reduce((total, item) => total + item.durationMin, 0)
-  return Math.max(sum, 30)
 }
 
 async function assertVehicleBelongsToCustomer(

@@ -94,8 +94,9 @@ must preserve existing IDs, jobs, payments, invoices, and photo relationships.
 - `lib/bookingAvailability.ts`: pure timezone/buffer math;
   `bookingSchedule.ts`: shared transaction lock/conflict check;
   `ops/bookings.ts`: instant/request/customer changes and notification events.
-- `lib/jobLines.ts`: pure job-line snapshot matching shared by `JobForm` and
-  `ops/jobs.ts`, plus the customer-visible booking change test.
+- `lib/jobLines.ts`: pure job-line snapshot matching and duration rule shared by
+  `JobForm`, the job edit page, and `ops/jobs.ts`, plus the customer-visible
+  booking change test.
 - `lib/media/uploads.ts`, `storage.ts`: private R2/S3 uploads and validation.
   `uploads.ts` preserves legacy local-file access for development/migration.
 - `lib/ai`: marketing context/provider/quotas; `lib/workers`: leased AI dispatch;

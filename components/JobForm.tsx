@@ -16,7 +16,7 @@ import {
   textareaClass,
 } from '@/components/ui'
 import { minutesToHuman } from '@/lib/dates'
-import { type ServiceLine, serviceLines } from '@/lib/jobLines'
+import { deriveDuration, type ServiceLine, serviceLines } from '@/lib/jobLines'
 import { formatCents, parseMoneyToCents } from '@/lib/money'
 
 export interface JobFormCustomer {
@@ -82,6 +82,7 @@ export function JobForm({
   const [serviceIds, setServiceIds] = useState<string[]>(initial.serviceIds)
   const [customLines, setCustomLines] = useState<CustomLineDraft[]>(initial.customLines)
   const [discount, setDiscount] = useState(initial.discount)
+  const [durationOverride, setDurationOverride] = useState(initial.durationMin)
 
   const vehicles = customers.find((c) => c.id === customerId)?.vehicles ?? []
 
@@ -96,9 +97,14 @@ export function JobForm({
   const customSum = customLines.reduce((sum, line) => sum + (parseMoneyToCents(line.price) ?? 0), 0)
   const discountCents = parseMoneyToCents(discount) ?? 0
   const total = Math.max(0, serviceSum + customSum - discountCents)
-  const durationSum =
-    lines.reduce((sum, line) => sum + line.durationMin, 0) +
-    customLines.reduce((sum, line) => sum + (Number(line.durationMin) || 0), 0)
+  // The server's rule, so the summary shows the length a save stores; it rejects other overrides.
+  const allLines = [
+    ...lines,
+    ...customLines.map((line) => ({ durationMin: Number(line.durationMin) || 0 })),
+  ]
+  const overrideMin = durationOverride.trim() === '' ? null : Number(durationOverride)
+  const derivedMin = deriveDuration(null, allLines)
+  const durationMin = deriveDuration(Number.isInteger(overrideMin) ? overrideMin : null, allLines)
 
   const toggleService = (id: string) => {
     setServiceIds((current) =>
@@ -181,9 +187,12 @@ export function JobForm({
                   type="number"
                   name="durationMin"
                   min={15}
-                  step={15}
-                  defaultValue={initial.durationMin}
-                  placeholder={`auto — ${minutesToHuman(Math.max(durationSum, 30))}`}
+                  // Booked lengths are plain service totals (20 min, say); a coarser step would
+                  // make the browser refuse to submit a pre-filled one.
+                  step={1}
+                  value={durationOverride}
+                  onChange={(e) => setDurationOverride(e.target.value)}
+                  placeholder={`auto — ${minutesToHuman(derivedMin)}`}
                   className={inputClass}
                 />
               </Field>
@@ -207,7 +216,9 @@ export function JobForm({
                   <div className="grid gap-2 sm:grid-cols-2">
                     {group.services.map((service) => {
                       const booked = bookedLine(service.id)
-                      const shown = booked ?? service
+                      // Selected copies as they will save; unselected, what checking would add.
+                      const copies = lines.filter((line) => line.serviceId === service.id)
+                      const shown = copies.length > 0 ? copies : [booked ?? service]
                       const repriced =
                         booked &&
                         !service.retired &&
@@ -232,9 +243,14 @@ export function JobForm({
                               className="accent-cyan-700"
                             />
                             <span>
-                              <span className="block font-medium text-slate-900">{shown.name}</span>
+                              <span className="block font-medium text-slate-900">
+                                {shown[0]?.name}
+                                {copies.length > 1 ? ` ×${copies.length}` : null}
+                              </span>
                               <span className="block text-xs text-slate-500">
-                                {minutesToHuman(shown.durationMin)}
+                                {minutesToHuman(
+                                  shown.reduce((sum, line) => sum + line.durationMin, 0),
+                                )}
                               </span>
                               {repriced ? (
                                 <span className="block text-xs text-slate-500">
@@ -245,7 +261,7 @@ export function JobForm({
                             </span>
                           </span>
                           <span className="font-semibold tabular-nums text-slate-700">
-                            {formatCents(shown.priceCents)}
+                            {formatCents(shown.reduce((sum, line) => sum + line.priceCents, 0))}
                           </span>
                         </label>
                       )
@@ -365,8 +381,13 @@ export function JobForm({
               </div>
               <div className="flex justify-between">
                 <dt className="text-slate-500">Est. duration</dt>
-                <dd className="tabular-nums text-slate-700">
-                  {minutesToHuman(Math.max(durationSum, 30))}
+                <dd className="text-right tabular-nums text-slate-700">
+                  {minutesToHuman(durationMin)}
+                  {durationMin !== derivedMin ? (
+                    <span className="block text-xs text-slate-500">
+                      override · services {minutesToHuman(derivedMin)}
+                    </span>
+                  ) : null}
                 </dd>
               </div>
             </dl>

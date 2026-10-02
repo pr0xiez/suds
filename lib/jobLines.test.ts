@@ -3,9 +3,11 @@ import {
   type BookingView,
   bookingViewChanged,
   type CatalogService,
+  deriveDuration,
   type JobLine,
   reconcileJobLines,
   serviceLines,
+  storedDurationOverride,
 } from '@/lib/jobLines'
 
 const catalogOf = (...services: CatalogService[]) =>
@@ -152,5 +154,45 @@ describe('bookingViewChanged', () => {
 
   it('treats an unreadable stored snapshot as changed so the sync rewrites it', () => {
     expect(bookingViewChanged({ ...view, lines: null }, view)).toBe(true)
+  })
+})
+
+describe('job duration', () => {
+  const minutes = (...durations: number[]) => durations.map((durationMin) => ({ durationMin }))
+
+  it('uses an override of at least 15 minutes, else the lines with a 30-minute floor', () => {
+    expect(deriveDuration(120, minutes(60))).toBe(120)
+    expect(deriveDuration(15, minutes(60))).toBe(15)
+    expect(deriveDuration(null, minutes(60, 30))).toBe(90)
+    expect(deriveDuration(null, minutes(15))).toBe(30)
+    expect(deriveDuration(10, minutes(60))).toBe(60)
+  })
+
+  it('leaves the edit override blank when the stored lines derive the stored length', () => {
+    expect(storedDurationOverride(60, minutes(60))).toBeNull()
+    expect(storedDurationOverride(90, minutes(60, 15, 15))).toBeNull()
+    expect(storedDurationOverride(30, minutes(10, 5))).toBeNull()
+  })
+
+  it('keeps a length the lines would not derive, including a booked 15-minute job', () => {
+    expect(storedDurationOverride(15, minutes(15))).toBe(15)
+    expect(storedDurationOverride(120, minutes(60))).toBe(120)
+    expect(storedDurationOverride(45, minutes(60))).toBe(45)
+    expect(storedDurationOverride(2880, minutes())).toBe(2880)
+    // A kept override still governs until the owner clears it.
+    expect(deriveDuration(storedDurationOverride(15, minutes(15)), minutes(15, 60))).toBe(15)
+  })
+
+  it('saves an untouched form at the stored length and follows the lines once they change', () => {
+    for (const [stored, lines] of [
+      [60, minutes(60)],
+      [15, minutes(15)],
+      [120, minutes(60)],
+      [30, minutes(10)],
+    ] as const)
+      expect(deriveDuration(storedDurationOverride(stored, lines), lines)).toBe(stored)
+    const override = storedDurationOverride(60, minutes(60))
+    expect(deriveDuration(override, minutes(60, 60))).toBe(120)
+    expect(deriveDuration(override, minutes(45))).toBe(45)
   })
 })

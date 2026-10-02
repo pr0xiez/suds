@@ -3,6 +3,7 @@ import { hashPassword } from '@/lib/auth/password'
 import { businessUserFor } from '@/lib/business'
 import { addDays, dateKey, todayWall } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
+import { storedDurationOverride } from '@/lib/jobLines'
 import {
   changeCustomerBooking,
   createAvailabilityBlock,
@@ -33,6 +34,14 @@ async function rejected(action: () => Promise<unknown>, message: string) {
     failed = true
   }
   assert(failed, message)
+}
+/** The duration override the job edit form posts when the owner leaves the field as loaded. */
+async function formDurationOverride(businessId: string, jobId: string) {
+  const job = await prisma.job.findUniqueOrThrow({
+    where: { businessId_id: { businessId, id: jobId } },
+    include: { items: true },
+  })
+  return storedDurationOverride(job.durationMin, job.items)
 }
 
 async function main() {
@@ -259,7 +268,13 @@ async function main() {
   }
   const wax = await createService(businessA, waxInput)
   await updateService(businessA, wax.id, { ...waxInput, priceCents: 4500 })
-  await updateJob(businessA, job.id, { ...bookedEdit, serviceIds: [serviceA.id, wax.id] })
+  const waxOverride = await formDurationOverride(businessA, job.id)
+  assert(waxOverride === null, 'The edit form pinned a length the booked lines already derive')
+  await updateJob(businessA, job.id, {
+    ...bookedEdit,
+    serviceIds: [serviceA.id, wax.id],
+    durationMin: waxOverride,
+  })
   const waxAdded = await prisma.job.findUniqueOrThrow({
     where: { id: job.id },
     include: { items: { orderBy: { sort: 'asc' } }, booking: true },
@@ -276,7 +291,7 @@ async function main() {
       waxAdded.durationMin === 90 &&
       waxAdded.booking?.priceCents === 17000 &&
       waxAdded.booking.durationMin === 90,
-    'An added service did not snapshot the current catalog beside the booked line',
+    'An added service did not snapshot the current catalog or lengthen the booking',
   )
   await updateService(businessA, wax.id, { ...waxInput, priceCents: 6000, active: false })
   await updateJob(businessA, job.id, {
@@ -500,6 +515,40 @@ async function main() {
     () => updateJob(businessB, otherJob.id, { ...otherEdit, durationMin: 150 }),
     'A longer job claimed blocked time',
   )
+  // Services added through the edit form lengthen the job and only that added time must be free;
+  // removing one claims nothing, even with time off over the job.
+  const [tireShine, polish] = await Promise.all(
+    [
+      { name: 'Fixture tire shine', priceCents: 2000, durationMin: 15 },
+      { name: 'Fixture polish', priceCents: 6000, durationMin: 60 },
+    ].map((addOn) =>
+      createService(businessB, { ...fixtureDetail, ...addOn, category: 'ADDON', sort: 1 }),
+    ),
+  )
+  assert(tireShine && polish, 'Fixture add-ons missing')
+  const otherLength = async () =>
+    (await prisma.job.findUniqueOrThrow({ where: { id: otherJob.id } })).durationMin
+  await updateJob(businessB, otherJob.id, {
+    ...otherEdit,
+    serviceIds: [serviceB.id, tireShine.id],
+    durationMin: await formDurationOverride(businessB, otherJob.id),
+  })
+  assert((await otherLength()) === 75, 'A service added in an edit did not lengthen the job')
+  const polishOverride = await formDurationOverride(businessB, otherJob.id)
+  await rejected(
+    () =>
+      updateJob(businessB, otherJob.id, {
+        ...otherEdit,
+        serviceIds: [serviceB.id, tireShine.id, polish.id],
+        durationMin: polishOverride,
+      }),
+    'A service added in an edit claimed blocked time',
+  )
+  await updateJob(businessB, otherJob.id, {
+    ...otherEdit,
+    durationMin: await formDurationOverride(businessB, otherJob.id),
+  })
+  assert((await otherLength()) === 60, 'Removing a service under time off did not shorten the job')
   // A legacy multi-day job predates the duration limit; it blocks its days but breaks nothing.
   await prisma.job.create({
     data: {
@@ -548,7 +597,7 @@ async function main() {
     'Concurrent settings saves failed',
   )
   console.log(
-    'PASS: membership isolation, verification, concurrent booking, retries, approval, rescheduling, cancellation, snapshots, job edits keep booked lines, silent private edits, blocked time, jobs under time off, legacy long jobs, settings lock order, private record guards, per-business invoices',
+    'PASS: membership isolation, verification, concurrent booking, retries, approval, rescheduling, cancellation, snapshots, job edits keep booked lines, silent private edits, edits follow line durations, blocked time, jobs under time off, legacy long jobs, settings lock order, private record guards, per-business invoices',
   )
 }
 

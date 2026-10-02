@@ -103,6 +103,29 @@ export function reconcileJobLines(
   return all.map((line, sort) => ({ ...line, sort }))
 }
 
+/** A job's length: an explicit override of at least 15 minutes, else its lines' total (min 30). */
+export function deriveDuration(
+  override: number | null,
+  lines: readonly { durationMin: number }[],
+): number {
+  if (override !== null && override >= 15) return override
+  return Math.max(
+    lines.reduce((total, line) => total + line.durationMin, 0),
+    30,
+  )
+}
+
+/**
+ * The override a stored job length stands for: null when its lines derive it anyway, so an edit
+ * form leaves the field blank and the length keeps following the lines as services change.
+ */
+export function storedDurationOverride(
+  durationMin: number,
+  lines: readonly { durationMin: number }[],
+): number | null {
+  return durationMin === deriveDuration(null, lines) ? null : durationMin
+}
+
 /** What a linked booking shows its customer; `lines` is null when the stored copy is unreadable. */
 export interface BookingView {
   scheduledAt: Date

@@ -85,6 +85,13 @@ claims its time again. New reservations are 15–1440 minutes; stored legacy row
 may be longer and still count as busy for their full span. Busy-time reads are
 bounded to the window being checked.
 
+A job lasts its explicit duration override, else its lines' total with a
+30-minute minimum. The edit form pre-fills the override only when the stored
+length differs from what the stored lines derive, so services added or removed
+in an edit lengthen or shorten the job; only the added time is checked. Jobs
+created from bookings store the plain service total with no minimum, so a booked
+job under 30 minutes keeps its length as an override until the owner clears it.
+
 Booking request state and job progress are separate. Owner changes preserve
 the customer and vehicle on linked jobs and synchronize customer-facing time,
 price, lines, duration, state, and notifications. An owner edit that changes

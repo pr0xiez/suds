@@ -5,6 +5,7 @@ import { requireUser } from '@/lib/auth/session'
 import { describeVehicle } from '@/lib/captions'
 import { toDatetimeLocalValue } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
+import { storedDurationOverride } from '@/lib/jobLines'
 import { activeServices } from '@/lib/ops/services'
 import { getSettings } from '@/lib/ops/settings'
 
@@ -39,6 +40,9 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
       !services.some((s) => s.id === line.serviceId) &&
       bookedLines.findIndex((other) => other.serviceId === line.serviceId) === index,
   )
+  // A stored length the lines would derive anyway is not an override: leaving the field blank lets
+  // services added or removed here change the length, and the calendar check the time they add.
+  const durationOverride = storedDurationOverride(job.durationMin, job.items)
   const customLines = job.items
     .filter((item) => item.serviceId === null)
     .map((item) => ({
@@ -81,7 +85,7 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
           customerId: job.customerId,
           vehicleId: job.vehicleId,
           scheduledAt: toDatetimeLocalValue(job.scheduledAt, settings.timezone),
-          durationMin: String(job.durationMin),
+          durationMin: durationOverride === null ? '' : String(durationOverride),
           serviceIds: bookedLines.map((line) => line.serviceId),
           bookedLines,
           customLines,

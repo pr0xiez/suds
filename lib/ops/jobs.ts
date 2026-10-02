@@ -141,14 +141,17 @@ export async function updateJob(businessId: string, id: string, input: JobInput)
         (input.customerId !== existing.customerId || input.vehicleId !== existing.vehicleId)
       )
         throw new Error('A customer booking cannot be reassigned to another customer or vehicle')
-      if (!['CANCELED', 'NO_SHOW'].includes(existing.status))
-        await assertScheduleAvailable(
-          tx,
-          businessId,
-          input.scheduledAt,
-          deriveDuration(input.durationMin, items),
-          { excludeJobId: id, excludeBookingId: existing.booking?.id },
-        )
+      const durationMin = deriveDuration(input.durationMin, items)
+      const timeChanged =
+        input.scheduledAt.getTime() !== existing.scheduledAt.getTime() ||
+        durationMin !== existing.durationMin
+      // An edit that keeps the job's time skips the calendar; a new time only needs its added part free.
+      if (timeChanged && !RELEASED.includes(existing.status))
+        await assertScheduleAvailable(tx, businessId, input.scheduledAt, durationMin, {
+          excludeJobId: id,
+          excludeBookingId: existing.booking?.id,
+          held: existing,
+        })
       await tx.jobItem.deleteMany({ where: { jobId: id } })
       const job = await tx.job.update({
         where: { businessId_id: { businessId, id } },
@@ -156,7 +159,7 @@ export async function updateJob(businessId: string, id: string, input: JobInput)
           customerId: input.customerId,
           vehicleId: input.vehicleId,
           scheduledAt: input.scheduledAt,
-          durationMin: deriveDuration(input.durationMin, items),
+          durationMin,
           notes: input.notes,
           internalNotes: input.internalNotes,
           discountCents: input.discountCents,
@@ -186,6 +189,9 @@ export async function updateJob(businessId: string, id: string, input: JobInput)
     { timeout: 20_000 },
   )
 }
+
+/** Statuses whose time no longer counts as busy on the calendar. */
+const RELEASED: JobStatus[] = ['CANCELED', 'NO_SHOW']
 
 // target status → statuses it may come from
 const TRANSITIONS: Record<JobStatus, JobStatus[]> = {
@@ -219,7 +225,8 @@ export async function setJobStatus(
       if (!TRANSITIONS[status].includes(job.status)) {
         throw new Error(`Cannot move a ${job.status.toLowerCase()} job to ${status.toLowerCase()}`)
       }
-      if (status === 'SCHEDULED' || status === 'IN_PROGRESS')
+      // Only reopening a canceled or no-show job claims its time again; other moves already hold it.
+      if (RELEASED.includes(job.status) && !RELEASED.includes(status))
         await assertScheduleAvailable(tx, businessId, job.scheduledAt, job.durationMin, {
           excludeJobId: id,
           excludeBookingId: job.booking?.id,

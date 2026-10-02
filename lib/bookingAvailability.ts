@@ -93,6 +93,9 @@ export function overlaps(a: BusyInterval, b: BusyInterval): boolean {
   return a.start.getTime() < b.end.getTime() && b.start.getTime() < a.end.getTime()
 }
 
+/** The longest appointment a new reservation may claim. */
+export const MAX_APPOINTMENT_MIN = 1440
+
 export function reservationInterval(
   start: Date,
   durationMin: number,
@@ -102,11 +105,16 @@ export function reservationInterval(
     !Number.isFinite(start.getTime()) ||
     !Number.isInteger(durationMin) ||
     durationMin < 15 ||
-    durationMin > 1440
+    durationMin > MAX_APPOINTMENT_MIN
   ) {
     throw new Error('Pick a valid appointment duration')
   }
-  return { start, end: new Date(start.getTime() + (durationMin + bufferMin) * 60_000) }
+  return storedInterval(start, durationMin, bufferMin)
+}
+
+/** Time an existing row occupies. Legacy rows can predate the limits, so this never rejects. */
+export function storedInterval(start: Date, durationMin: number, bufferMin: number): BusyInterval {
+  return { start, end: new Date(start.getTime() + (Math.max(durationMin, 0) + bufferMin) * 60_000) }
 }
 
 /** UTC stepping visits both repeated fall-back times and never invents a spring-gap time. */

@@ -8,11 +8,13 @@ import {
   createAvailabilityBlock,
   decideBooking,
   publicAvailability,
+  saveBookingSetup,
   submitPublicBooking,
 } from '@/lib/ops/bookings'
 import { addVehicle, createCustomer, updateCustomer } from '@/lib/ops/customers'
 import { createJob, ensureInvoice, setJobStatus, updateJob } from '@/lib/ops/jobs'
 import { createService, deleteService } from '@/lib/ops/services'
+import { updateSettings } from '@/lib/ops/settings'
 import { createPost } from '@/lib/ops/social'
 import { cleanupFixtureBusiness } from './fixtures'
 
@@ -355,8 +357,81 @@ async function main() {
     !blocked.some((slot) => slot >= block.startsAt && slot < block.endsAt),
     'Blocked time was offered',
   )
+  // Time off placed over an existing job must not freeze it: status moves and edits that keep
+  // its time skip the calendar, while an edit that claims more time still has to fit.
+  await createAvailabilityBlock(
+    businessB,
+    start,
+    new Date(start.getTime() + 3600_000),
+    'Fixture sick day',
+  )
+  await setJobStatus(businessB, otherJob.id, 'IN_PROGRESS')
+  await setJobStatus(businessB, otherJob.id, 'SCHEDULED')
+  const otherEdit = {
+    customerId: ownCustomer.id,
+    vehicleId: vehicle.id,
+    scheduledAt: start,
+    serviceIds: [serviceB.id],
+    customLines: [],
+    durationMin: null,
+    notes: 'Edited under time off',
+    internalNotes: '',
+    discountCents: 0,
+  }
+  await updateJob(businessB, otherJob.id, otherEdit)
+  await rejected(
+    () => updateJob(businessB, otherJob.id, { ...otherEdit, durationMin: 150 }),
+    'A longer job claimed blocked time',
+  )
+  // A legacy multi-day job predates the duration limit; it blocks its days but breaks nothing.
+  await prisma.job.create({
+    data: {
+      businessId: businessB,
+      customerId: ownCustomer.id,
+      vehicleId: vehicle.id,
+      scheduledAt: new Date(start.getTime() + 24 * 3600_000),
+      durationMin: 2880,
+    },
+  })
+  const today = todayWall('America/New_York')
+  assert(
+    (await publicAvailability(businessB, dateKey(addDays(today, 4)), [serviceB.id])).length === 0,
+    'A legacy multi-day job did not block its days',
+  )
+  assert(
+    (await publicAvailability(businessB, dateKey(addDays(today, 10)), [serviceB.id])).length > 0,
+    'A legacy multi-day job broke availability',
+  )
+  // Settings and booking setup take the business and settings rows in the same order.
+  const settingsB = await prisma.settings.findUniqueOrThrow({ where: { businessId: businessB } })
+  const setup = {
+    name: 'Launch fixture',
+    slug: `suds-test-${businessB}`,
+    serviceArea: 'Test city',
+    timezone: 'America/New_York',
+    bookingMode: 'INSTANT' as const,
+    workingHours: settingsB.workingHours,
+    travelBufferMin: settingsB.travelBufferMin,
+    leadTimeMin: settingsB.leadTimeMin,
+    horizonDays: settingsB.horizonDays,
+    cancellationHours: settingsB.cancellationHours,
+    publish: true,
+    phone: '',
+    email: '',
+  }
+  const saves = await Promise.allSettled(
+    Array.from({ length: 6 }, (_, index) =>
+      index % 2
+        ? saveBookingSetup(businessB, setup)
+        : updateSettings(businessB, { businessName: 'Launch fixture' }),
+    ),
+  )
+  assert(
+    saves.every((result) => result.status === 'fulfilled'),
+    'Concurrent settings saves failed',
+  )
   console.log(
-    'PASS: membership isolation, verification, concurrent booking, retries, approval, rescheduling, cancellation, snapshots, blocked time, private record guards, per-business invoices',
+    'PASS: membership isolation, verification, concurrent booking, retries, approval, rescheduling, cancellation, snapshots, blocked time, jobs under time off, legacy long jobs, settings lock order, private record guards, per-business invoices',
   )
 }
 

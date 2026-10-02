@@ -67,11 +67,19 @@ reservedUntil explicitly exists. Acceptance checks availability and creates one
 linked job once. Repeated submission/acceptance is idempotent.
 
 Every calendar mutation locks the same Business row before reading busy time:
-owner jobs, booking acceptance, customer changes, and availability blocks. The
-full duration and configured buffer must fit working hours without crossing a
-break, job, or block. Lead time and booking horizon apply to public changes.
-Cancellation and rescheduling follow the business policy; replacement time is
-reserved in the same transaction as releasing the original.
+owner jobs, booking acceptance, customer changes, availability blocks, and
+settings saves. Transactions that also write Settings take the Business row
+first. The full duration and configured buffer must fit working hours without
+crossing a break, job, or block. Lead time and booking horizon apply to public
+changes. Cancellation and rescheduling follow the business policy; replacement
+time is reserved in the same transaction as releasing the original.
+
+Only newly claimed time is checked. A job edit that keeps its time, a status
+move between scheduled, in progress, and completed, or a block placed over
+existing work never rechecks that job. Reopening a canceled or no-show job
+claims its time again. New reservations are 15–1440 minutes; stored legacy rows
+may be longer and still count as busy for their full span. Busy-time reads are
+bounded to the window being checked.
 
 Booking request state and job progress are separate. Owner changes preserve
 the customer and vehicle on linked jobs and synchronize customer-facing time,
@@ -125,8 +133,9 @@ history. Queue failures stay visible in `/settings/operations`.
 
 Booking/account events enqueue emails in their database transaction. Delivery
 uses a provider idempotency key and bounded retries. Cancel/reschedule invalidates
-stale reminders; dispatch rechecks the appointment under the calendar lock.
-No email is sent by page rendering. Promotional communication is separate scope.
+stale reminders; dispatch rechecks the appointment under the calendar lock, then
+releases it before calling the provider so a slow provider never stalls booking.
+A change during the send queues its own notice. No email is sent by page rendering. Promotional communication is separate scope.
 
 Run one persistent worker or invoke `/api/internal/worker` regularly using a
 Bearer CRON_SECRET of at least 32 characters. `/api/health` checks the database;

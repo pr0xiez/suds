@@ -69,7 +69,9 @@ export async function processNotificationOutbox(
     })
     if (!row) break
     try {
-      const delivered = await prisma.$transaction(
+      // Recheck under the writers' locks, then release them before the provider call so a slow
+      // provider never stalls bookings. A change after this check queues its own notice.
+      const deliverable = await prisma.$transaction(
         async (tx) => {
           if (row.dedupeKey.startsWith('account:')) {
             let accountToken = await tx.accountToken.findUnique({
@@ -126,27 +128,27 @@ export async function processNotificationOutbox(
             }
           }
           const current = await tx.notificationOutbox.findUnique({ where: { id: row.id } })
-          if (current?.status !== 'PROCESSING') return false
-          const res = await fetch(url, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-              'Idempotency-Key': row.dedupeKey,
-            },
-            body: JSON.stringify({ from, to: [row.to], subject: row.subject, text: row.text }),
-            signal: AbortSignal.timeout(15_000),
-          })
-          if (!res.ok) throw new Error(`Email provider returned HTTP ${res.status}`)
-          await tx.notificationOutbox.update({
-            where: { id: row.id },
-            data: { status: 'SENT', sentAt: new Date(), lockedAt: null, lastError: null },
-          })
-          return true
+          return current?.status === 'PROCESSING'
         },
-        { timeout: 25_000, maxWait: 20_000 },
+        { timeout: 20_000, maxWait: 20_000 },
       )
-      if (!delivered) continue
+      if (!deliverable) continue
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': row.dedupeKey,
+        },
+        body: JSON.stringify({ from, to: [row.to], subject: row.subject, text: row.text }),
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!res.ok) throw new Error(`Email provider returned HTTP ${res.status}`)
+      // Unconditional: the message went out even if a change canceled the row mid-send.
+      await prisma.notificationOutbox.update({
+        where: { id: row.id },
+        data: { status: 'SENT', sentAt: new Date(), lockedAt: null, lastError: null },
+      })
       sent++
     } catch {
       await prisma.notificationOutbox.updateMany({

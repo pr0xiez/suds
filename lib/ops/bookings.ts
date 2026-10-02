@@ -7,6 +7,7 @@ import {
 } from '@/lib/bookingAvailability'
 import {
   assertScheduleAvailable,
+  dayWindow,
   lockBusinessSchedule,
   scheduleBusyIntervals,
 } from '@/lib/bookingSchedule'
@@ -90,11 +91,13 @@ export async function publicAvailability(businessId: string, day: string, servic
         services.every((service) => service.category === 'ADDON')
       )
         return []
+      const window = dayWindow(day, business.settings.timezone)
+      if (!window) return []
       return availableSlots(
         business.settings,
         day,
         duration,
-        await scheduleBusyIntervals(tx, businessId),
+        await scheduleBusyIntervals(tx, businessId, { window }),
       )
     },
     { timeout: 20_000, maxWait: 20_000 },
@@ -369,12 +372,14 @@ export async function customerRescheduleAvailability(
       )
         return []
       const settings = booking.business.settings
-      if (!settings) return []
+      const window = settings && dayWindow(day, settings.timezone)
+      if (!settings || !window) return []
       return availableSlots(
         settings,
         day,
         booking.durationMin,
         await scheduleBusyIntervals(tx, booking.businessId, {
+          window,
           excludeBookingId: booking.id,
           ...(booking.jobId ? { excludeJobId: booking.jobId } : {}),
         }),

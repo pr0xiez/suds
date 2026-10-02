@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto'
+import { type AuthErrorCode, AuthFormError } from '@/lib/auth/formErrors'
 import { hashPassword } from '@/lib/auth/password'
 import { safeAuthNext } from '@/lib/business'
 import { prisma } from '@/lib/db/client'
@@ -7,16 +8,44 @@ import { publicAppUrl, queueEmail } from '@/lib/notifications'
 
 export const tokenHash = (raw: string) => createHash('sha256').update(raw).digest('hex')
 
+const validEmail = (email: string) =>
+  email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+const validPasswordLength = (password: string) => password.length >= 12 && password.length <= 128
+
 export function normalizeEmail(value: string): string {
   const email = value.trim().toLowerCase()
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
-    throw new Error('Enter a valid email address')
+  if (!validEmail(email)) throw new AuthFormError('email')
   return email
 }
 
 export function validateNewPassword(password: string): void {
-  if (password.length < 12 || password.length > 128)
-    throw new Error('Use a password with 12–128 characters')
+  if (!validPasswordLength(password)) throw new AuthFormError('password_length')
+}
+
+export type RegistrationInput = {
+  email: string
+  name: string
+  password: string
+  kind: 'OWNER' | 'CUSTOMER'
+  businessName?: string
+  next?: string
+  signupCode?: string
+}
+
+/** Every field problem at once, in form order, so one submit reports them all. */
+export function registrationProblems(input: RegistrationInput): AuthErrorCode[] {
+  const problems: AuthErrorCode[] = []
+  if (!input.name.trim()) problems.push('name')
+  if (input.kind === 'OWNER' && !input.businessName?.trim()) problems.push('business_name')
+  if (!validEmail(input.email.trim().toLowerCase())) problems.push('email')
+  if (!validPasswordLength(input.password)) problems.push('password_length')
+  if (
+    input.kind === 'OWNER' &&
+    process.env.SIGNUP_CODE &&
+    input.signupCode !== process.env.SIGNUP_CODE
+  )
+    problems.push('signup_code')
+  return problems
 }
 
 export async function queueAccountToken(
@@ -63,32 +92,16 @@ export async function queueAccountToken(
   })
 }
 
-export async function registerAccount(input: {
-  email: string
-  name: string
-  password: string
-  kind: 'OWNER' | 'CUSTOMER'
-  businessName?: string
-  next?: string
-  signupCode?: string
-}) {
-  if (
-    input.kind === 'OWNER' &&
-    process.env.SIGNUP_CODE &&
-    input.signupCode !== process.env.SIGNUP_CODE
-  )
-    throw new Error('A valid pilot invitation code is required')
+export async function registerAccount(input: RegistrationInput) {
+  const [problem, ...more] = registrationProblems(input)
+  if (problem) throw new AuthFormError(problem, ...more)
   const email = normalizeEmail(input.email)
   const name = input.name.trim().slice(0, 120)
-  if (!name) throw new Error('Enter your name')
-  validateNewPassword(input.password)
   const passwordHash = await hashPassword(input.password)
   const businessName = input.businessName?.trim().slice(0, 120)
-  if (input.kind === 'OWNER' && !businessName) throw new Error('Enter your business name')
   return prisma.$transaction(
     async (tx) => {
-      if (await tx.user.findUnique({ where: { email } }))
-        throw new Error('Unable to create this account. Sign in or recover your password.')
+      if (await tx.user.findUnique({ where: { email } })) throw new AuthFormError('email_taken')
       const user = await tx.user.create({ data: { email, name, passwordHash, role: 'STAFF' } })
       let businessId: string | undefined
       if (input.kind === 'OWNER') {
@@ -149,7 +162,7 @@ export async function consumeAccountToken(
   password?: string,
   flow: 'VERIFY' | 'RESET' = 'VERIFY',
 ) {
-  if (!/^[A-Za-z0-9_-]{43}$/.test(raw)) throw new Error('This link is invalid or expired')
+  if (!/^[A-Za-z0-9_-]{43}$/.test(raw)) throw new AuthFormError('link_invalid')
   if (password) validateNewPassword(password)
   const passwordHash = password ? await hashPassword(password) : null
   return prisma.$transaction(async (tx) => {
@@ -158,30 +171,30 @@ export async function consumeAccountToken(
       include: { user: true },
     })
     if (!token?.user.active || token.consumedAt || token.expiresAt <= new Date())
-      throw new Error('This link is invalid or expired')
+      throw new AuthFormError('link_invalid')
     if (token.purpose === 'CUSTOMER_LINK' && token.businessId && token.customerId) {
       await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "businessId" = ${token.businessId} AND "id" = ${token.customerId} FOR UPDATE`
       const customer = await tx.customer.findUniqueOrThrow({
         where: { businessId_id: { businessId: token.businessId, id: token.customerId } },
       })
       if (customer.userId || customer.email.trim().toLowerCase() !== token.user.email)
-        throw new Error('This customer invitation has been revoked')
+        throw new AuthFormError('link_revoked')
     }
     if ((flow === 'RESET') !== (token.purpose === 'RESET_PASSWORD'))
-      throw new Error('This link cannot be used here')
+      throw new AuthFormError('link_wrong_flow')
     if (token.purpose === 'RESET_PASSWORD' && !passwordHash)
-      throw new Error('Choose a new password')
+      throw new AuthFormError('password_required')
     if (
       ['MEMBERSHIP_INVITE', 'CUSTOMER_LINK'].includes(token.purpose) &&
       !token.user.emailVerifiedAt &&
       !passwordHash
     )
-      throw new Error('Choose a password for your account')
+      throw new AuthFormError('password_required')
     const consumed = await tx.accountToken.updateMany({
       where: { id: token.id, consumedAt: null, expiresAt: { gt: new Date() } },
       data: { consumedAt: new Date() },
     })
-    if (consumed.count !== 1) throw new Error('This link has already been used')
+    if (consumed.count !== 1) throw new AuthFormError('link_invalid')
     if (token.purpose === 'RESET_PASSWORD') {
       await tx.user.update({
         where: { id: token.userId },
@@ -317,10 +330,13 @@ export async function createBusinessForUser(
   businessName: string,
   signupCode?: string,
 ) {
-  if (process.env.SIGNUP_CODE && signupCode !== process.env.SIGNUP_CODE)
-    throw new Error('A valid pilot invitation code is required')
+  const problems: AuthErrorCode[] = []
   const name = businessName.trim().slice(0, 120)
-  if (!name) throw new Error('Enter your business name')
+  if (!name) problems.push('business_name')
+  if (process.env.SIGNUP_CODE && signupCode !== process.env.SIGNUP_CODE)
+    problems.push('signup_code')
+  const [problem, ...more] = problems
+  if (problem) throw new AuthFormError(problem, ...more)
   const base =
     name
       .toLowerCase()
@@ -330,7 +346,7 @@ export async function createBusinessForUser(
   return prisma.$transaction(
     async (tx) => {
       const user = await tx.user.findUniqueOrThrow({ where: { id: userId } })
-      if (!user.active || !user.emailVerifiedAt) throw new Error('Verify your account first')
+      if (!user.active || !user.emailVerifiedAt) throw new AuthFormError('unverified')
       return tx.business.create({
         data: {
           name,

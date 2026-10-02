@@ -96,9 +96,6 @@ export async function saveJobAction(_prev: FormState | null, fd: FormData): Prom
       : await createJob(user.businessId, input)
     savedId = job.id
   } catch (err) {
-    if (err instanceof z.ZodError) {
-      return { error: err.issues[0]?.message ?? 'Check the form and try again' }
-    }
     return { error: friendlyError(err) }
   }
   revalidatePath('/', 'layout')

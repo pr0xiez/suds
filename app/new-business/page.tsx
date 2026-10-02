@@ -2,6 +2,7 @@ import { StorefrontIcon } from '@phosphor-icons/react/ssr'
 import { AccountFrame } from '@/components/AccountFrame'
 import { ErrorBanner } from '@/components/banners'
 import { btnPrimary, Field, inputClass } from '@/components/ui'
+import { authBannerMessage, readAuthErrors } from '@/lib/auth/formErrors'
 import { requireVerifiedIdentity } from '@/lib/auth/session'
 
 export default async function NewBusinessPage({
@@ -10,7 +11,7 @@ export default async function NewBusinessPage({
   searchParams: Promise<{ error?: string }>
 }) {
   const user = await requireVerifiedIdentity()
-  const { error } = await searchParams
+  const errors = readAuthErrors((await searchParams).error)
   return (
     <AccountFrame
       title="Start a detailing business"
@@ -22,25 +23,26 @@ export default async function NewBusinessPage({
       }
     >
       <form method="post" action="/api/auth/new-business" className="space-y-5">
-        <ErrorBanner
-          message={
-            error
-              ? 'We could not create your business. Check the name and invitation code, then try again.'
-              : null
-          }
-        />
-        <Field label="Business name">
+        <ErrorBanner message={authBannerMessage(errors)} />
+        <Field label="Business name" error={errors.fields.businessName}>
           <input
             className={inputClass}
             name="businessName"
             maxLength={120}
             required
             autoComplete="organization"
+            aria-invalid={errors.fields.businessName ? true : undefined}
           />
         </Field>
         {process.env.SIGNUP_CODE ? (
-          <Field label="Pilot invitation code">
-            <input className={inputClass} name="signupCode" required autoComplete="off" />
+          <Field label="Pilot invitation code" error={errors.fields.signupCode}>
+            <input
+              className={inputClass}
+              name="signupCode"
+              required
+              autoComplete="off"
+              aria-invalid={errors.fields.signupCode ? true : undefined}
+            />
           </Field>
         ) : null}
         <button className={`${btnPrimary} w-full`} type="submit">

@@ -178,7 +178,7 @@ async function main() {
   const posted = await markPosted(businessId, post.id)
   assert(posted.status === 'POSTED' && posted.postedAt !== null, 'markPosted failed')
 
-  log('update job (reschedule + re-snapshot)')
+  log('update job (reschedule, keep line snapshot)')
   await updateJob(businessId, job.id, {
     customerId: customer.id,
     vehicleId: vehicle.id,

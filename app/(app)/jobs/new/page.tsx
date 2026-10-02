@@ -82,6 +82,7 @@ export default async function NewJobPage({
           scheduledAt,
           durationMin: '',
           serviceIds: [],
+          bookedLines: [],
           customLines: [],
           discount: '',
           notes: '',

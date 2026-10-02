@@ -1,21 +1,28 @@
 import { assertScheduleAvailable, lockBusinessSchedule } from '@/lib/bookingSchedule'
 import { prisma } from '@/lib/db/client'
-import type { Job, Prisma } from '@/lib/generated/prisma/client'
+import type { Booking, Job, Prisma } from '@/lib/generated/prisma/client'
 import type { JobStatus, PaymentMethod } from '@/lib/generated/prisma/enums'
-import { queueBookingNotice } from '@/lib/ops/bookings'
+import {
+  type BookingView,
+  bookingViewChanged,
+  type CustomLineInput,
+  type JobLine,
+  type LineSnapshot,
+  reconcileJobLines,
+} from '@/lib/jobLines'
+import { bookingServices, queueBookingNotice } from '@/lib/ops/bookings'
 import { deleteUploadFile } from '@/lib/uploads'
 
-export interface CustomLineInput {
-  name: string
-  priceCents: number
-  durationMin: number
-}
+export type { CustomLineInput }
 
 export interface JobInput {
   customerId: string
   vehicleId: string
   scheduledAt: Date
-  /** Catalog services, in display order — snapshotted server-side at save time. */
+  /**
+   * Catalog services. A service already on the job keeps its stored line; any other one is
+   * snapshotted server-side from the active catalog at save time.
+   */
   serviceIds: string[]
   /** One-off lines ("pet hair removal +$40") that aren't in the catalog. */
   customLines: CustomLineInput[]
@@ -36,49 +43,29 @@ export const jobInclude = {
 
 export type JobWithRelations = Prisma.JobGetPayload<{ include: typeof jobInclude }>
 
-type ItemRow = {
-  serviceId: string | null
-  name: string
-  priceCents: number
-  durationMin: number
-  sort: number
-}
-
 /**
- * Line items snapshot the catalog at save time. Prices and durations come from
- * the Service rows on the server — never from the client — so a tampered form
- * can pick services but not reprice them.
+ * Line items snapshot the catalog when a service is added. Prices and durations come from the
+ * job's stored lines or the Service rows on the server — never from the client — so a tampered
+ * form can pick services but not reprice them.
  */
 async function buildItems(
+  db: Prisma.TransactionClient,
   businessId: string,
-  serviceIds: string[],
-  customLines: CustomLineInput[],
-): Promise<ItemRow[]> {
-  const services = await prisma.service.findMany({
-    where: { businessId, id: { in: serviceIds }, active: true },
+  booked: readonly LineSnapshot[],
+  input: Pick<JobInput, 'serviceIds' | 'customLines'>,
+): Promise<JobLine[]> {
+  const services = await db.service.findMany({
+    where: { businessId, id: { in: input.serviceIds }, active: true },
   })
-  const byId = new Map(services.map((s) => [s.id, s]))
-  const items: ItemRow[] = []
-  let sort = 0
-  for (const id of serviceIds) {
-    const service = byId.get(id)
-    if (!service) throw new Error('Unknown service on job')
-    items.push({
-      serviceId: service.id,
-      name: service.name,
-      priceCents: service.priceCents,
-      durationMin: service.durationMin,
-      sort: sort++,
-    })
-  }
-  for (const line of customLines) {
-    items.push({ serviceId: null, ...line, sort: sort++ })
-  }
-  if (items.length === 0) throw new Error('A job needs at least one service or line item')
-  return items
+  return reconcileJobLines(
+    booked,
+    input.serviceIds,
+    input.customLines,
+    new Map(services.map((service) => [service.id, service])),
+  )
 }
 
-function deriveDuration(override: number | null, items: ItemRow[]): number {
+function deriveDuration(override: number | null, items: readonly JobLine[]): number {
   if (override !== null && override >= 15) return override
   const sum = items.reduce((total, item) => total + item.durationMin, 0)
   return Math.max(sum, 30)
@@ -99,7 +86,7 @@ async function assertVehicleBelongsToCustomer(
 
 export async function createJob(businessId: string, input: JobInput): Promise<Job> {
   await assertVehicleBelongsToCustomer(businessId, input.vehicleId, input.customerId)
-  const items = await buildItems(businessId, input.serviceIds, input.customLines)
+  const items = await buildItems(prisma, businessId, [], input)
   return prisma.$transaction(
     async (tx) => {
       await assertScheduleAvailable(
@@ -128,19 +115,20 @@ export async function createJob(businessId: string, input: JobInput): Promise<Jo
 
 export async function updateJob(businessId: string, id: string, input: JobInput): Promise<Job> {
   await assertVehicleBelongsToCustomer(businessId, input.vehicleId, input.customerId)
-  const items = await buildItems(businessId, input.serviceIds, input.customLines)
   return prisma.$transaction(
     async (tx) => {
       await lockBusinessSchedule(tx, businessId)
       const existing = await tx.job.findUniqueOrThrow({
         where: { businessId_id: { businessId, id } },
-        include: { booking: true },
+        include: { booking: true, items: { orderBy: { sort: 'asc' } } },
       })
       if (
         existing.booking &&
         (input.customerId !== existing.customerId || input.vehicleId !== existing.vehicleId)
       )
         throw new Error('A customer booking cannot be reassigned to another customer or vehicle')
+      // Lines already on the job keep their snapshot; only services added now read the catalog.
+      const items = await buildItems(tx, businessId, existing.items, input)
       const durationMin = deriveDuration(input.durationMin, items)
       const timeChanged =
         input.scheduledAt.getTime() !== existing.scheduledAt.getTime() ||
@@ -167,27 +155,47 @@ export async function updateJob(businessId: string, id: string, input: JobInput)
         },
       })
       if (existing.booking) {
-        const booking = await tx.booking.update({
-          where: { id: existing.booking.id },
-          data: {
-            scheduledAt: job.scheduledAt,
-            durationMin: job.durationMin,
-            serviceSnapshots: items,
-            priceCents: Math.max(
-              0,
-              items.reduce((sum, line) => sum + line.priceCents, 0) - job.discountCents,
-            ),
-            address: job.locationAddress,
-            waterPowerNotes: job.waterPowerNotes,
-            customerNotes: job.notes,
-          },
-        })
-        await queueBookingNotice(tx, booking, 'updated')
+        const sync = {
+          scheduledAt: job.scheduledAt,
+          durationMin: job.durationMin,
+          serviceSnapshots: items,
+          priceCents: Math.max(
+            0,
+            items.reduce((sum, line) => sum + line.priceCents, 0) - job.discountCents,
+          ),
+          address: job.locationAddress,
+          waterPowerNotes: job.waterPowerNotes,
+          customerNotes: job.notes,
+        }
+        // Rewriting the booking would also void its queued reminder, so an edit the customer
+        // cannot see (private notes, say) leaves the booking and its notices alone.
+        if (
+          bookingViewChanged(bookingView(existing.booking), {
+            ...sync,
+            lines: sync.serviceSnapshots,
+          })
+        ) {
+          const booking = await tx.booking.update({
+            where: { id: existing.booking.id },
+            data: sync,
+          })
+          await queueBookingNotice(tx, booking, 'updated')
+        }
       }
       return job
     },
     { timeout: 20_000 },
   )
+}
+
+function bookingView(booking: Booking): BookingView {
+  let lines: LineSnapshot[] | null
+  try {
+    lines = bookingServices(booking.serviceSnapshots)
+  } catch {
+    lines = null
+  }
+  return { ...booking, lines }
 }
 
 /** Statuses whose time no longer counts as busy on the calendar. */

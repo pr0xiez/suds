@@ -52,7 +52,11 @@ to `suds-legacy` and existing users to accepted memberships without changing IDs
 Each business has exactly one Settings record. Invoice numbers use its atomic
 counter and are unique within the business. Money is integer cents. Job lines
 snapshot service names, prices, and duration; catalog changes do not change a
-confirmed booking. Customer invoices expose customer-facing details only.
+confirmed booking. A job edit keeps the stored line of every service still
+selected, matched per service including repeats, even after that service is
+repriced or deactivated. Only services newly added in the edit snapshot the
+active catalog; the edit form shows those same values. Customer invoices expose
+customer-facing details only.
 
 ## Booking and calendar
 
@@ -83,7 +87,10 @@ bounded to the window being checked.
 
 Booking request state and job progress are separate. Owner changes preserve
 the customer and vehicle on linked jobs and synchronize customer-facing time,
-price, lines, duration, state, and notifications. Decline/cancel releases capacity.
+price, lines, duration, state, and notifications. An owner edit that changes
+none of the synchronized fields, such as private internal notes alone, leaves
+the booking, its reminder, and notices untouched. Line order and catalog links
+alone do not count. Decline/cancel releases capacity.
 Customer operations cannot set prices, discounts, payments, internal notes,
 or work status. Completed/in-progress jobs are not freely rescheduled.
 

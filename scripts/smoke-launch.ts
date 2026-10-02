@@ -13,7 +13,7 @@ import {
 } from '@/lib/ops/bookings'
 import { addVehicle, createCustomer, updateCustomer } from '@/lib/ops/customers'
 import { createJob, ensureInvoice, setJobStatus, updateJob } from '@/lib/ops/jobs'
-import { createService, deleteService } from '@/lib/ops/services'
+import { createService, deleteService, type ServiceInput, updateService } from '@/lib/ops/services'
 import { updateSettings } from '@/lib/ops/settings'
 import { createPost } from '@/lib/ops/social'
 import { cleanupFixtureBusiness } from './fixtures'
@@ -96,18 +96,17 @@ async function main() {
       },
     })
   }
+  const fixtureDetail: ServiceInput = {
+    name: 'Fixture detail',
+    description: '',
+    priceCents: 12500,
+    durationMin: 60,
+    category: 'FULL',
+    active: true,
+    sort: 0,
+  }
   const [serviceA, serviceB] = await Promise.all(
-    [businessA, businessB].map((id) =>
-      createService(id, {
-        name: 'Fixture detail',
-        description: '',
-        priceCents: 12500,
-        durationMin: 60,
-        category: 'FULL',
-        active: true,
-        sort: 0,
-      }),
-    ),
+    [businessA, businessB].map((id) => createService(id, fixtureDetail)),
   )
   assert(serviceA && serviceB, 'Fixture services missing')
   assert(
@@ -183,6 +182,124 @@ async function main() {
   )
   const invoice = await ensureInvoice(businessA, job.id)
   assert((await ensureInvoice(businessA, job.id)) === invoice, 'Invoice retry changed its number')
+  // Owner edits keep booked line snapshots through catalog changes; only added services read the
+  // catalog, and an edit the customer cannot see leaves the booking and its notices alone.
+  await updateService(businessA, serviceA.id, {
+    ...fixtureDetail,
+    priceCents: 15000,
+    durationMin: 90,
+  })
+  const bookedEdit = {
+    customerId: job.customerId,
+    vehicleId: job.vehicleId,
+    scheduledAt: job.scheduledAt,
+    serviceIds: [serviceA.id],
+    customLines: [],
+    durationMin: null,
+    notes: 'Gate code 1234',
+    internalNotes: '',
+    discountCents: 0,
+  }
+  const notices = () =>
+    prisma.notificationOutbox.count({
+      where: { businessId: businessA, dedupeKey: { startsWith: `booking:${booking.id}:` } },
+    })
+  const noticesBeforeNotes = await notices()
+  await updateJob(businessA, job.id, bookedEdit)
+  const notesEdited = await prisma.job.findUniqueOrThrow({
+    where: { id: job.id },
+    include: { items: true, booking: true },
+  })
+  const keptLine = notesEdited.items[0]
+  assert(
+    notesEdited.items.length === 1 &&
+      keptLine?.serviceId === serviceA.id &&
+      keptLine.name === 'Fixture detail' &&
+      keptLine.priceCents === 12500 &&
+      keptLine.durationMin === 60 &&
+      notesEdited.durationMin === 60,
+    'A notes-only edit re-snapshotted a booked line from the catalog',
+  )
+  assert(
+    notesEdited.booking?.priceCents === 12500 &&
+      notesEdited.booking.durationMin === 60 &&
+      notesEdited.booking.customerNotes === 'Gate code 1234',
+    'A notes-only edit changed the booked price or duration',
+  )
+  const noticesAfterNotes = await notices()
+  assert(noticesAfterNotes > noticesBeforeNotes, 'A customer-visible note edit queued no notice')
+  await updateJob(businessA, job.id, { ...bookedEdit, internalNotes: 'Owner-only note' })
+  const privateEdited = await prisma.job.findUniqueOrThrow({
+    where: { id: job.id },
+    include: { booking: true },
+  })
+  const syncedAt = notesEdited.booking.updatedAt.toISOString()
+  assert(privateEdited.internalNotes === 'Owner-only note', 'Private note edit was not saved')
+  assert(
+    (await notices()) === noticesAfterNotes &&
+      privateEdited.booking?.updatedAt.toISOString() === syncedAt,
+    'A private note edit rewrote the booking or queued a notice',
+  )
+  assert(
+    (await prisma.notificationOutbox.count({
+      where: {
+        businessId: businessA,
+        status: 'PENDING',
+        dedupeKey: { startsWith: `booking:${booking.id}:reminder:`, endsWith: `:v${syncedAt}` },
+      },
+    })) === 1,
+    'A private note edit voided the appointment reminder',
+  )
+  const waxInput: ServiceInput = {
+    ...fixtureDetail,
+    name: 'Fixture wax',
+    priceCents: 4000,
+    durationMin: 30,
+    category: 'ADDON',
+  }
+  const wax = await createService(businessA, waxInput)
+  await updateService(businessA, wax.id, { ...waxInput, priceCents: 4500 })
+  await updateJob(businessA, job.id, { ...bookedEdit, serviceIds: [serviceA.id, wax.id] })
+  const waxAdded = await prisma.job.findUniqueOrThrow({
+    where: { id: job.id },
+    include: { items: { orderBy: { sort: 'asc' } }, booking: true },
+  })
+  const [detailLine, waxLine] = waxAdded.items
+  assert(
+    waxAdded.items.length === 2 &&
+      detailLine?.priceCents === 12500 &&
+      detailLine.durationMin === 60 &&
+      waxLine?.serviceId === wax.id &&
+      waxLine.name === 'Fixture wax' &&
+      waxLine.priceCents === 4500 &&
+      waxLine.durationMin === 30 &&
+      waxAdded.durationMin === 90 &&
+      waxAdded.booking?.priceCents === 17000 &&
+      waxAdded.booking.durationMin === 90,
+    'An added service did not snapshot the current catalog beside the booked line',
+  )
+  await updateService(businessA, wax.id, { ...waxInput, priceCents: 6000, active: false })
+  await updateJob(businessA, job.id, {
+    ...bookedEdit,
+    serviceIds: [serviceA.id, wax.id],
+    notes: 'Gate code 5678',
+  })
+  const retiredKept = await prisma.jobItem.findMany({
+    where: { jobId: job.id },
+    orderBy: { sort: 'asc' },
+  })
+  assert(
+    retiredKept.length === 2 &&
+      retiredKept[1]?.serviceId === wax.id &&
+      retiredKept[1].priceCents === 4500,
+    'A retired service already on the job failed the edit or lost its snapshot',
+  )
+  await rejected(
+    () =>
+      updateJob(businessA, job.id, { ...bookedEdit, serviceIds: [serviceA.id, wax.id, wax.id] }),
+    'A retired service was added to a job as a new line',
+  )
+  await updateService(businessA, serviceA.id, fixtureDetail)
   await changeCustomerBooking(winnerUser.id, booking.id, null)
   assert(
     (await prisma.job.findUniqueOrThrow({ where: { id: job.id } })).status === 'CANCELED',
@@ -431,7 +548,7 @@ async function main() {
     'Concurrent settings saves failed',
   )
   console.log(
-    'PASS: membership isolation, verification, concurrent booking, retries, approval, rescheduling, cancellation, snapshots, blocked time, jobs under time off, legacy long jobs, settings lock order, private record guards, per-business invoices',
+    'PASS: membership isolation, verification, concurrent booking, retries, approval, rescheduling, cancellation, snapshots, job edits keep booked lines, silent private edits, blocked time, jobs under time off, legacy long jobs, settings lock order, private record guards, per-business invoices',
   )
 }
 

@@ -28,13 +28,19 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
   ])
   if (!job) notFound()
 
-  // Catalog lines re-snapshot from today's catalog on save; lines whose service
-  // was deleted come back as editable custom lines.
-  const serviceIds = job.items
-    .map((item) => item.serviceId)
-    .filter((sid): sid is string => sid !== null && services.some((s) => s.id === sid))
+  // Catalog lines keep their booked name, price, and duration on save; only services added here
+  // snapshot the current catalog. A service no longer offered stays selectable at its booked
+  // values, and lines whose service was deleted come back as editable custom lines.
+  const bookedLines = job.items.flatMap(({ serviceId, name, priceCents, durationMin }) =>
+    serviceId === null ? [] : [{ serviceId, name, priceCents, durationMin }],
+  )
+  const retired = bookedLines.filter(
+    (line, index) =>
+      !services.some((s) => s.id === line.serviceId) &&
+      bookedLines.findIndex((other) => other.serviceId === line.serviceId) === index,
+  )
   const customLines = job.items
-    .filter((item) => item.serviceId === null || !services.some((s) => s.id === item.serviceId))
+    .filter((item) => item.serviceId === null)
     .map((item) => ({
       name: item.name,
       price: (item.priceCents / 100).toFixed(2),
@@ -43,27 +49,41 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
 
   return (
     <div>
-      <PageHeader title="Edit job" subtitle="Prices re-snapshot from the current catalog on save" />
+      <PageHeader
+        title="Edit job"
+        subtitle="Services already on this job keep their booked price; added ones use today’s catalog"
+      />
       <JobForm
         customers={customers.map((c) => ({
           id: c.id,
           name: c.name,
           vehicles: c.vehicles.map((v) => ({ id: v.id, label: describeVehicle(v) })),
         }))}
-        services={services.map((s) => ({
-          id: s.id,
-          name: s.name,
-          priceCents: s.priceCents,
-          durationMin: s.durationMin,
-          category: s.category,
-        }))}
+        services={[
+          ...services.map((s) => ({
+            id: s.id,
+            name: s.name,
+            priceCents: s.priceCents,
+            durationMin: s.durationMin,
+            category: s.category,
+          })),
+          ...retired.map((line) => ({
+            id: line.serviceId,
+            name: line.name,
+            priceCents: line.priceCents,
+            durationMin: line.durationMin,
+            category: '',
+            retired: true,
+          })),
+        ]}
         initial={{
           jobId: job.id,
           customerId: job.customerId,
           vehicleId: job.vehicleId,
           scheduledAt: toDatetimeLocalValue(job.scheduledAt, settings.timezone),
           durationMin: String(job.durationMin),
-          serviceIds,
+          serviceIds: bookedLines.map((line) => line.serviceId),
+          bookedLines,
           customLines,
           discount: job.discountCents > 0 ? (job.discountCents / 100).toFixed(2) : '',
           notes: job.notes,

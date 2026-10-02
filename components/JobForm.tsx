@@ -16,6 +16,7 @@ import {
   textareaClass,
 } from '@/components/ui'
 import { minutesToHuman } from '@/lib/dates'
+import { type ServiceLine, serviceLines } from '@/lib/jobLines'
 import { formatCents, parseMoneyToCents } from '@/lib/money'
 
 export interface JobFormCustomer {
@@ -30,6 +31,8 @@ export interface JobFormService {
   priceCents: number
   durationMin: number
   category: string
+  /** On the job but no longer offered: shown at its booked values and never added afresh. */
+  retired?: boolean
 }
 
 export interface CustomLineDraft {
@@ -45,6 +48,8 @@ export interface JobFormInitial {
   scheduledAt: string
   durationMin: string
   serviceIds: string[]
+  /** The job's stored catalog lines; saving keeps their values while they stay selected. */
+  bookedLines: ServiceLine[]
   customLines: CustomLineDraft[]
   discount: string
   notes: string
@@ -80,14 +85,19 @@ export function JobForm({
 
   const vehicles = customers.find((c) => c.id === customerId)?.vehicles ?? []
 
-  const serviceSum = services
-    .filter((s) => serviceIds.includes(s.id))
-    .reduce((sum, s) => sum + s.priceCents, 0)
+  // The same matching the server saves with: booked lines keep their values, added ones are quoted.
+  const { lines } = serviceLines(
+    initial.bookedLines,
+    serviceIds,
+    new Map(services.map((s) => [s.id, s])),
+  )
+  const bookedLine = (id: string) => initial.bookedLines.find((line) => line.serviceId === id)
+  const serviceSum = lines.reduce((sum, line) => sum + line.priceCents, 0)
   const customSum = customLines.reduce((sum, line) => sum + (parseMoneyToCents(line.price) ?? 0), 0)
   const discountCents = parseMoneyToCents(discount) ?? 0
   const total = Math.max(0, serviceSum + customSum - discountCents)
   const durationSum =
-    services.filter((s) => serviceIds.includes(s.id)).reduce((sum, s) => sum + s.durationMin, 0) +
+    lines.reduce((sum, line) => sum + line.durationMin, 0) +
     customLines.reduce((sum, line) => sum + (Number(line.durationMin) || 0), 0)
 
   const toggleService = (id: string) => {
@@ -96,15 +106,25 @@ export function JobForm({
     )
   }
 
-  const grouped = CATEGORY_ORDER.map((category) => ({
-    category,
-    services: services.filter((s) => s.category === category),
-  })).filter((group) => group.services.length > 0)
+  const grouped = [
+    ...CATEGORY_ORDER.map((category) => ({
+      label: CATEGORY_LABELS[category] ?? category,
+      services: services.filter((s) => !s.retired && s.category === category),
+    })),
+    { label: 'No longer offered', services: services.filter((s) => s.retired) },
+  ].filter((group) => group.services.length > 0)
 
   return (
     <form action={formAction} className="space-y-6">
       <input type="hidden" name="jobId" value={initial.jobId} />
       <input type="hidden" name="customLines" value={JSON.stringify(customLines)} />
+      {/* A checkbox posts its service once; a service repeated on the job posts its extra copies. */}
+      {serviceIds
+        .filter((id, index) => serviceIds.indexOf(id) !== index)
+        .map((id, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: copies of one service are interchangeable
+          <input key={index} type="hidden" name="serviceIds" value={id} />
+        ))}
       <ErrorBanner message={state?.error} />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
@@ -182,39 +202,54 @@ export function JobForm({
           <Card title="Services">
             <div className="space-y-4">
               {grouped.map((group) => (
-                <div key={group.category}>
-                  <p className={labelClass}>{CATEGORY_LABELS[group.category] ?? group.category}</p>
+                <div key={group.label}>
+                  <p className={labelClass}>{group.label}</p>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {group.services.map((service) => (
-                      <label
-                        key={service.id}
-                        className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-                          serviceIds.includes(service.id)
-                            ? 'border-cyan-600 bg-cyan-50'
-                            : 'border-slate-200 bg-white hover:border-slate-300'
-                        }`}
-                      >
-                        <span className="flex items-center gap-2">
-                          <input
-                            type="checkbox"
-                            name="serviceIds"
-                            value={service.id}
-                            checked={serviceIds.includes(service.id)}
-                            onChange={() => toggleService(service.id)}
-                            className="accent-cyan-700"
-                          />
-                          <span>
-                            <span className="block font-medium text-slate-900">{service.name}</span>
-                            <span className="block text-xs text-slate-500">
-                              {minutesToHuman(service.durationMin)}
+                    {group.services.map((service) => {
+                      const booked = bookedLine(service.id)
+                      const shown = booked ?? service
+                      const repriced =
+                        booked &&
+                        !service.retired &&
+                        (booked.priceCents !== service.priceCents ||
+                          booked.durationMin !== service.durationMin)
+                      return (
+                        <label
+                          key={service.id}
+                          className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
+                            serviceIds.includes(service.id)
+                              ? 'border-cyan-600 bg-cyan-50'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <span className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              name="serviceIds"
+                              value={service.id}
+                              checked={serviceIds.includes(service.id)}
+                              onChange={() => toggleService(service.id)}
+                              className="accent-cyan-700"
+                            />
+                            <span>
+                              <span className="block font-medium text-slate-900">{shown.name}</span>
+                              <span className="block text-xs text-slate-500">
+                                {minutesToHuman(shown.durationMin)}
+                              </span>
+                              {repriced ? (
+                                <span className="block text-xs text-slate-500">
+                                  Booked rate · catalog now {formatCents(service.priceCents)},{' '}
+                                  {minutesToHuman(service.durationMin)}
+                                </span>
+                              ) : null}
                             </span>
                           </span>
-                        </span>
-                        <span className="font-semibold tabular-nums text-slate-700">
-                          {formatCents(service.priceCents)}
-                        </span>
-                      </label>
-                    ))}
+                          <span className="font-semibold tabular-nums text-slate-700">
+                            {formatCents(shown.priceCents)}
+                          </span>
+                        </label>
+                      )
+                    })}
                   </div>
                 </div>
               ))}

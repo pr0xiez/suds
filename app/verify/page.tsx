@@ -2,8 +2,10 @@ import { EnvelopeSimpleIcon } from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
 import { AccountFrame } from '@/components/AccountFrame'
 import { ErrorBanner, SuccessBanner } from '@/components/banners'
-import { btnPrimary, Field, inputClass, linkClass } from '@/components/ui'
+import { NewPasswordFields } from '@/components/NewPasswordFields'
+import { btnPrimary, linkClass } from '@/components/ui'
 import { tokenHash } from '@/lib/auth/accounts'
+import { authBannerMessage, readAuthErrors } from '@/lib/auth/formErrors'
 import { safeAuthNext } from '@/lib/business'
 import { prisma } from '@/lib/db/client'
 
@@ -32,6 +34,11 @@ export default async function VerifyPage({
     valid &&
     ['MEMBERSHIP_INVITE', 'CUSTOMER_LINK'].includes(token.purpose) &&
     !token.user.emailVerifiedAt
+  const errors = readAuthErrors(query.error)
+  const banner =
+    query.token && !valid
+      ? 'This link is invalid, expired, or already used. Request another email or recover your account.'
+      : authBannerMessage(errors)
   return (
     <AccountFrame
       title={valid ? 'Confirm your email' : 'Check your email'}
@@ -41,9 +48,7 @@ export default async function VerifyPage({
           : 'Open the verification link sent to your email. Your account becomes available after you confirm it.'
       }
     >
-      {query.error || (query.token && !valid) ? (
-        <ErrorBanner message="This link is invalid, expired, or already used. Request another email or recover your account." />
-      ) : null}
+      <ErrorBanner message={banner} />
       {query.sent ? (
         <SuccessBanner message="If your account needs verification, another email has been queued." />
       ) : null}
@@ -52,17 +57,7 @@ export default async function VerifyPage({
           <input type="hidden" name="token" value={query.token} />
           <input type="hidden" name="next" value={next} />
           {needPassword ? (
-            <Field label="Choose a password" hint="Use at least 12 characters.">
-              <input
-                className={inputClass}
-                type="password"
-                name="password"
-                autoComplete="new-password"
-                minLength={12}
-                maxLength={128}
-                required
-              />
-            </Field>
+            <NewPasswordFields label="Choose a password" errors={errors.fields} />
           ) : null}
           <button className={`${btnPrimary} w-full`} type="submit">
             Confirm email

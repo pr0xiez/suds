@@ -1,7 +1,9 @@
 import Link from 'next/link'
 import { AccountFrame } from '@/components/AccountFrame'
 import { ErrorBanner } from '@/components/banners'
-import { btnPrimary, Field, inputClass, linkClass } from '@/components/ui'
+import { NewPasswordFields } from '@/components/NewPasswordFields'
+import { btnPrimary, linkClass } from '@/components/ui'
+import { authBannerMessage, readAuthErrors } from '@/lib/auth/formErrors'
 
 export default async function ResetPasswordPage({
   searchParams,
@@ -10,25 +12,14 @@ export default async function ResetPasswordPage({
 }) {
   const query = await searchParams
   const token = query.token && /^[A-Za-z0-9_-]{43}$/.test(query.token) ? query.token : ''
+  const errors = readAuthErrors(query.error)
   return (
     <AccountFrame title="Choose a new password">
-      {query.error ? (
-        <ErrorBanner message="This link is invalid or expired, or the password is too short. Request a new recovery link." />
-      ) : null}
+      <ErrorBanner message={authBannerMessage(errors)} />
       {token ? (
         <form method="post" action="/api/auth/reset-password" className="space-y-5">
           <input type="hidden" name="token" value={token} />
-          <Field label="New password" hint="Use at least 12 characters.">
-            <input
-              className={inputClass}
-              type="password"
-              name="password"
-              autoComplete="new-password"
-              minLength={12}
-              maxLength={128}
-              required
-            />
-          </Field>
+          <NewPasswordFields label="New password" errors={errors.fields} />
           <div>
             <button type="submit" className={`${btnPrimary} w-full`}>
               Reset password

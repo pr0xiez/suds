@@ -1,5 +1,6 @@
 import type { NextRequest } from 'next/server'
 import { createBusinessForUser } from '@/lib/auth/accounts'
+import { AuthFormError, authErrorParam } from '@/lib/auth/formErrors'
 import { authForm, authRedirect, formText } from '@/lib/auth/forms'
 import { consumeRateLimit } from '@/lib/auth/persistentRateLimit'
 import { getSessionUser } from '@/lib/auth/session'
@@ -8,11 +9,9 @@ export async function POST(req: NextRequest) {
   try {
     const form = await authForm(req, 'new-business', 5)
     const user = await getSessionUser()
-    if (
-      !user?.emailVerifiedAt ||
-      !(await consumeRateLimit(`new-business:${user.id}`, 3, 24 * 60 * 60_000))
-    )
-      throw new Error('Verify your account first')
+    if (!user?.emailVerifiedAt) throw new AuthFormError('unverified')
+    if (!(await consumeRateLimit(`new-business:${user.id}`, 3, 24 * 60 * 60_000)))
+      throw new AuthFormError('rate')
     const business = await createBusinessForUser(
       user.id,
       formText(form, 'businessName'),
@@ -27,7 +26,7 @@ export async function POST(req: NextRequest) {
       maxAge: 30 * 24 * 60 * 60,
     })
     return res
-  } catch {
-    return authRedirect(req, '/new-business', { error: '1' })
+  } catch (err) {
+    return authRedirect(req, '/new-business', { error: authErrorParam(err) })
   }
 }

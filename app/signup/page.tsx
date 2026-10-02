@@ -2,7 +2,9 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { AccountFrame } from '@/components/AccountFrame'
 import { ErrorBanner } from '@/components/banners'
+import { NewPasswordFields } from '@/components/NewPasswordFields'
 import { btnPrimary, Field, inputClass, linkClass } from '@/components/ui'
+import { authBannerMessage, readAuthErrors } from '@/lib/auth/formErrors'
 import { getSessionUser } from '@/lib/auth/session'
 import { safeAuthNext } from '@/lib/business'
 
@@ -17,6 +19,8 @@ export default async function SignupPage({
   if (user?.emailVerifiedAt && !customer) redirect('/new-business')
   if (user?.emailVerifiedAt && customer) redirect(safeAuthNext(query.next, '/portal'))
   const next = safeAuthNext(query.next, customer ? '/portal' : '/dashboard')
+  const errors = readAuthErrors(query.error)
+  const invalid = (message?: string) => (message ? true : undefined)
   return (
     <AccountFrame
       title={customer ? 'Create your customer account' : 'Start your detailing business'}
@@ -25,51 +29,50 @@ export default async function SignupPage({
       <form action="/api/auth/signup" method="post" className="space-y-5">
         <input type="hidden" name="kind" value={customer ? 'CUSTOMER' : 'OWNER'} />
         <input type="hidden" name="next" value={next} />
-        <ErrorBanner
-          message={
-            query.error
-              ? 'We could not create your account. Check your details, use a password with 12 to 128 characters, or sign in if you already have an account.'
-              : null
-          }
-        />
-        <Field label="Your name">
-          <input name="name" required maxLength={120} autoComplete="name" className={inputClass} />
+        <ErrorBanner message={authBannerMessage(errors)} />
+        <Field label="Your name" error={errors.fields.name}>
+          <input
+            name="name"
+            required
+            maxLength={120}
+            autoComplete="name"
+            aria-invalid={invalid(errors.fields.name)}
+            className={inputClass}
+          />
         </Field>
         {!customer ? (
-          <Field label="Business name">
+          <Field label="Business name" error={errors.fields.businessName}>
             <input
               name="businessName"
               required
               maxLength={120}
               autoComplete="organization"
+              aria-invalid={invalid(errors.fields.businessName)}
               className={inputClass}
             />
           </Field>
         ) : null}
-        <Field label="Email">
+        <Field label="Email" error={errors.fields.email}>
           <input
             name="email"
             type="email"
             required
             maxLength={254}
             autoComplete="email"
+            aria-invalid={invalid(errors.fields.email)}
             className={inputClass}
           />
         </Field>
-        <Field label="Password" hint="Use at least 12 characters.">
-          <input
-            name="password"
-            type="password"
-            minLength={12}
-            maxLength={128}
-            required
-            autoComplete="new-password"
-            className={inputClass}
-          />
-        </Field>
+        <NewPasswordFields errors={errors.fields} />
         {!customer && process.env.SIGNUP_CODE ? (
-          <Field label="Pilot invitation code">
-            <input name="signupCode" required autoComplete="off" className={inputClass} />
+          <Field label="Pilot invitation code" error={errors.fields.signupCode}>
+            <input
+              name="signupCode"
+              required
+              autoComplete="off"
+              aria-invalid={invalid(errors.fields.signupCode)}
+              className={inputClass}
+            />
           </Field>
         ) : null}
         <button type="submit" className={`${btnPrimary} w-full`}>

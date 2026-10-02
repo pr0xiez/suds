@@ -43,7 +43,7 @@ export const linkClass =
   'font-medium text-accent-ink underline-offset-4 hover:underline focus-visible:underline'
 
 const controlBase =
-  'block w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-base text-ink transition-colors placeholder:text-ink-faint hover:border-ink-faint focus:border-focus focus:outline-none focus:ring-3 focus:ring-focus/20 disabled:cursor-not-allowed disabled:opacity-60 sm:text-sm'
+  'block w-full rounded-control border border-line-strong bg-surface px-3 py-2 text-base text-ink transition-colors placeholder:text-ink-faint hover:border-ink-faint focus:border-focus focus:outline-none focus:ring-3 focus:ring-focus/20 disabled:cursor-not-allowed disabled:opacity-60 aria-invalid:border-danger sm:text-sm'
 
 export const inputClass = clsx(controlBase, 'min-h-10')
 export const selectClass = clsx(controlBase, 'min-h-10 pr-8')

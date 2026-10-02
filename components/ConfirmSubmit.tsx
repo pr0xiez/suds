@@ -1,6 +1,6 @@
 'use client'
 
-/** Submit button that asks before firing — for the destructive forms. */
+/** Submit button that asks before firing, for the destructive forms. */
 export function ConfirmSubmit({
   message,
   className,

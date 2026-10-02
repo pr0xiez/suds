@@ -1,3 +1,4 @@
+import { FlaskIcon } from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
 import { DEMO_ACCOUNTS, DEMO_PASSWORD } from '@/lib/demo'
 
@@ -25,26 +26,36 @@ export function DemoSignIn({
   )
 }
 
+const item =
+  'inline-flex min-h-8 items-center whitespace-nowrap rounded-full px-2.5 font-medium text-chrome-muted transition-colors hover:bg-chrome-2 hover:text-chrome-ink'
+
+/**
+ * Development-only demo switcher. On phones it sits above the app shell's fixed
+ * tab bar (56px plus the safe area) so it never covers a tab.
+ */
 export function DemoToolbar() {
   return (
     <aside
       aria-label="Demo controls"
-      className="no-print fixed bottom-3 right-3 z-50 flex max-w-[calc(100%-24px)] flex-wrap items-center gap-2 rounded-2xl border border-emerald-700 bg-emerald-950 px-4 py-3 text-xs text-white shadow-xl"
+      className="no-print fixed right-3 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-50 flex max-w-[calc(100%-1.5rem)] items-center gap-0.5 overflow-x-auto rounded-full border border-chrome-line bg-chrome/95 p-1 text-xs text-chrome-ink shadow-float backdrop-blur-md md:bottom-3"
     >
-      <Link href="/demo" className="font-bold text-lime-200">
-        Demo tour
+      <Link
+        href="/demo"
+        className="inline-flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-accent px-2.5 font-semibold text-on-accent transition-colors hover:bg-accent-strong"
+      >
+        <FlaskIcon aria-hidden className="size-3.5" />
+        <span className="sm:hidden">Demo</span>
+        <span className="hidden sm:inline">Demo tour</span>
       </Link>
-      <span aria-hidden className="text-emerald-500">
-        ·
-      </span>
-      <DemoSignIn accountRole="owner" className="hover:underline">
+      <DemoSignIn accountRole="owner" className={item}>
         Owner
       </DemoSignIn>
-      <DemoSignIn accountRole="customer" className="hover:underline">
+      <DemoSignIn accountRole="customer" className={item}>
         Customer
       </DemoSignIn>
-      <Link href="/demo/inbox" className="hover:underline">
-        Demo inbox
+      <Link href="/demo/inbox" className={item}>
+        <span className="sm:hidden">Inbox</span>
+        <span className="hidden sm:inline">Demo inbox</span>
       </Link>
     </aside>
   )

@@ -1,17 +1,61 @@
-import { NavLink } from '@/components/NavLink'
+import {
+  CalendarBlankIcon,
+  CalendarDotsIcon,
+  ClipboardTextIcon,
+  DotsThreeOutlineIcon,
+  GearSixIcon,
+  ImagesIcon,
+  MegaphoneIcon,
+  PlusIcon,
+  SignOutIcon,
+  SquaresFourIcon,
+  StorefrontIcon,
+  TrayIcon,
+  UserCircleIcon,
+  UsersThreeIcon,
+} from '@phosphor-icons/react/ssr'
+import Link from 'next/link'
+import { Logo } from '@/components/Logo'
+import { MoreSheet, NavLink } from '@/components/NavLink'
 
-const NAV = [
-  { href: '/dashboard', label: 'Dashboard', icon: '◧' },
-  { href: '/schedule', label: 'Schedule', icon: '▦' },
-  { href: '/jobs', label: 'Jobs', icon: '☰' },
-  { href: '/customers', label: 'Customers', icon: '☺' },
-  { href: '/marketing', label: 'Marketing', icon: '✦' },
-  { href: '/social', label: 'Content calendar', icon: '▦' },
-  { href: '/bookings', label: 'Booking requests', icon: '◷' },
-  { href: '/onboarding', label: 'Business setup', icon: '⚙' },
-  { href: '/library', label: 'Library', icon: '▣' },
-  { href: '/settings', label: 'Settings', icon: '⚙' },
+type NavItem = {
+  href: string
+  label: string
+  icon: React.ReactNode
+  ownerOnly?: boolean
+  also?: string[]
+}
+
+const GROUPS: Array<{ label: string; items: NavItem[] }> = [
+  {
+    label: 'Operate',
+    items: [
+      { href: '/dashboard', label: 'Dashboard', icon: <SquaresFourIcon /> },
+      { href: '/schedule', label: 'Schedule', icon: <CalendarBlankIcon /> },
+      { href: '/jobs', label: 'Jobs', icon: <ClipboardTextIcon /> },
+      { href: '/customers', label: 'Customers', icon: <UsersThreeIcon /> },
+      { href: '/bookings', label: 'Booking requests', icon: <TrayIcon />, ownerOnly: true },
+    ],
+  },
+  {
+    label: 'Grow',
+    items: [
+      { href: '/marketing', label: 'Marketing', icon: <MegaphoneIcon />, ownerOnly: true },
+      { href: '/social', label: 'Content calendar', icon: <CalendarDotsIcon /> },
+      { href: '/library', label: 'Library', icon: <ImagesIcon /> },
+    ],
+  },
+  {
+    label: 'Set up',
+    items: [
+      { href: '/onboarding', label: 'Business setup', icon: <StorefrontIcon />, ownerOnly: true },
+      { href: '/settings', label: 'Settings', icon: <GearSixIcon />, also: ['/availability'] },
+    ],
+  },
 ]
+
+/** The four destinations a detailer reaches for between jobs; the rest live under More. */
+const TABS = ['/dashboard', '/schedule', '/jobs', '/customers']
 
 export function AppShell({
   user,
@@ -24,87 +68,185 @@ export function AppShell({
   businesses: Array<{ id: string; name: string }>
   children: React.ReactNode
 }) {
+  const isOwner = user.role === 'OWNER'
+  const groups = GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => isOwner || !item.ownerOnly),
+  })).filter((group) => group.items.length > 0)
+  const allItems = groups.flatMap((group) => group.items)
+  const tabItems = TABS.map((href) => allItems.find((item) => item.href === href)).filter(
+    (item): item is NavItem => item !== undefined,
+  )
+  const moreItems = allItems.filter((item) => !TABS.includes(item.href))
+  const current = businesses.find((business) => business.id === businessId)
+
+  const switcher = (
+    <BusinessSwitcher businessId={businessId} businesses={businesses} idSuffix="sidebar" />
+  )
+
   return (
-    <div className="flex min-h-dvh flex-col md:flex-row">
-      <aside className="no-print flex shrink-0 flex-col bg-slate-900 text-slate-100 md:min-h-dvh md:w-56 md:sticky md:top-0 md:h-dvh">
-        <div className="flex items-center gap-2 px-4 py-4">
-          <svg
-            aria-hidden="true"
-            viewBox="0 0 28 28"
-            className="h-7 w-7 text-cyan-300"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          >
-            <circle cx="10" cy="17" r="7" />
-            <circle cx="21" cy="7" r="4" />
-            <circle cx="22" cy="22" r="2.5" />
-          </svg>
-          <div>
-            <p className="text-lg font-bold leading-tight tracking-tight">Suds</p>
-            <p className="text-[10px] uppercase tracking-widest text-slate-400">
-              wash · work · post
-            </p>
-          </div>
+    <div className="min-h-dvh md:grid md:grid-cols-[15.5rem_minmax(0,1fr)] print:block">
+      {/* Desktop sidebar */}
+      <aside className="no-print sticky top-0 hidden h-dvh flex-col bg-chrome text-chrome-ink md:flex">
+        <div className="px-5 pt-5 pb-4">
+          <Link href="/dashboard" aria-label="Suds dashboard" className="inline-flex">
+            <Logo tone="chrome" />
+          </Link>
         </div>
-        <form method="post" action="/api/business/switch" className="px-3 pb-3">
-          <label htmlFor="business-switch" className="sr-only">
-            Business workspace
-          </label>
-          <select
-            id="business-switch"
-            name="businessId"
-            defaultValue={businessId}
-            className="w-full rounded-lg bg-slate-800 px-2 py-2 text-sm"
-          >
-            {businesses.map((business) => (
-              <option key={business.id} value={business.id}>
-                {business.name}
-              </option>
-            ))}
-          </select>
-          {businesses.length > 1 ? (
-            <button type="submit" className="mt-1 text-xs text-slate-300 underline">
-              Switch business
-            </button>
-          ) : null}
-          <a href="/new-business" className="mt-2 block text-xs text-slate-400 hover:text-white">
-            Start another business
-          </a>
-        </form>
-        <nav className="flex gap-1 overflow-x-auto px-2 pb-3 md:flex-1 md:flex-col md:overflow-x-visible">
-          {NAV.filter(
-            (item) =>
-              user.role === 'OWNER' ||
-              !['/marketing', '/bookings', '/onboarding'].includes(item.href),
-          ).map((item) => (
-            <NavLink key={item.href} href={item.href}>
-              <span aria-hidden className="w-4 text-center text-xs opacity-70">
-                {item.icon}
-              </span>
-              <span className="whitespace-nowrap">{item.label}</span>
-            </NavLink>
+        <div className="px-3 pb-4">{switcher}</div>
+        <nav aria-label="Main" className="flex-1 space-y-5 overflow-y-auto px-3 pb-4">
+          {groups.map((group) => (
+            <div key={group.label}>
+              <p className="px-3 pb-1.5 text-xs font-medium text-chrome-muted/80">{group.label}</p>
+              <div className="space-y-0.5">
+                {group.items.map((item) => (
+                  <NavLink key={item.href} href={item.href} also={item.also}>
+                    {item.icon}
+                    <span className="truncate">{item.label}</span>
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
-        <div className="border-t border-white/10 px-4 py-3">
-          <p className="truncate text-sm font-medium text-slate-200">{user.name}</p>
-          <p className="truncate text-xs text-slate-400">{user.email}</p>
-          <a href="/portal" className="text-xs text-slate-400 hover:text-white">
-            Customer portal
-          </a>
-          <form method="post" action="/api/logout" className="mt-2">
-            <button
-              type="submit"
-              className="text-xs font-medium text-slate-400 underline-offset-2 hover:text-white hover:underline"
-            >
-              Sign out
-            </button>
-          </form>
-        </div>
+        <AccountBlock user={user} />
       </aside>
-      <main className="min-w-0 flex-1 px-4 py-6 md:px-8">
+
+      {/* Phone top bar */}
+      <header className="no-print flex h-14 items-center justify-between gap-3 bg-chrome px-4 text-chrome-ink md:hidden">
+        <Link href="/dashboard" aria-label="Suds dashboard" className="inline-flex">
+          <Logo tone="chrome" />
+        </Link>
+        {current ? (
+          <span className="min-w-0 truncate text-sm text-chrome-muted">{current.name}</span>
+        ) : null}
+      </header>
+
+      <main className="min-w-0 px-4 pt-6 pb-28 sm:px-6 md:px-10 md:pt-10 md:pb-16 print:p-0">
         <div className="mx-auto w-full max-w-6xl">{children}</div>
       </main>
+
+      {/* Phone tab bar */}
+      <nav
+        aria-label="Main"
+        className="no-print fixed inset-x-0 bottom-0 z-30 flex border-t border-chrome-line bg-chrome/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
+      >
+        {tabItems.map((item) => (
+          <NavLink key={item.href} href={item.href} variant="tab">
+            {item.icon}
+            <span>{item.label}</span>
+          </NavLink>
+        ))}
+        <MoreSheet
+          activePaths={moreItems.flatMap((item) => [item.href, ...(item.also ?? [])])}
+          trigger={
+            <>
+              <DotsThreeOutlineIcon />
+              <span>More</span>
+            </>
+          }
+        >
+          <div className="mx-auto mt-2 mb-1 h-1 w-10 rounded-full bg-chrome-line" aria-hidden />
+          <div className="px-4 pt-3 pb-2">
+            <BusinessSwitcher businessId={businessId} businesses={businesses} idSuffix="sheet" />
+          </div>
+          <div className="grid grid-cols-1 gap-0.5 px-2 pb-2">
+            {moreItems.map((item) => (
+              <NavLink key={item.href} href={item.href} also={item.also}>
+                {item.icon}
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
+          <AccountBlock user={user} />
+        </MoreSheet>
+      </nav>
+    </div>
+  )
+}
+
+function BusinessSwitcher({
+  businessId,
+  businesses,
+  idSuffix,
+}: {
+  businessId: string
+  businesses: Array<{ id: string; name: string }>
+  idSuffix: string
+}) {
+  const selectId = `business-switch-${idSuffix}`
+  return (
+    <form method="post" action="/api/business/switch">
+      <label htmlFor={selectId} className="sr-only">
+        Business workspace
+      </label>
+      <div className="flex gap-1.5">
+        <select
+          id={selectId}
+          name="businessId"
+          defaultValue={businessId}
+          className="min-h-9 w-full min-w-0 truncate rounded-control border border-chrome-line bg-chrome-2 px-2.5 text-sm text-chrome-ink focus:border-accent focus:outline-none"
+        >
+          {businesses.map((business) => (
+            <option key={business.id} value={business.id}>
+              {business.name}
+            </option>
+          ))}
+        </select>
+        {businesses.length > 1 ? (
+          <button
+            type="submit"
+            className="min-h-9 shrink-0 rounded-control border border-chrome-line px-2.5 text-xs font-medium text-chrome-ink hover:bg-chrome-2"
+          >
+            Switch
+          </button>
+        ) : null}
+      </div>
+      <Link
+        href="/new-business"
+        className="mt-2 inline-flex items-center gap-1.5 px-1 text-xs text-chrome-muted transition-colors hover:text-chrome-ink"
+      >
+        <PlusIcon aria-hidden className="size-3.5" />
+        Start another business
+      </Link>
+    </form>
+  )
+}
+
+function AccountBlock({ user }: { user: { name: string; email: string } }) {
+  const initial = user.name.trim().charAt(0).toUpperCase() || '?'
+  return (
+    <div className="border-t border-chrome-line px-4 py-4">
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden
+          className="grid size-9 shrink-0 place-items-center rounded-full bg-accent text-sm font-semibold text-on-accent"
+        >
+          {initial}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-chrome-ink">{user.name}</p>
+          <p className="truncate text-xs text-chrome-muted">{user.email}</p>
+        </div>
+      </div>
+      <div className="mt-3 flex items-center gap-1">
+        <Link
+          href="/portal"
+          className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-control px-2 text-xs text-chrome-muted transition-colors hover:bg-chrome-2 hover:text-chrome-ink"
+        >
+          <UserCircleIcon aria-hidden className="size-4" />
+          Customer portal
+        </Link>
+        <form method="post" action="/api/logout">
+          <button
+            type="submit"
+            className="inline-flex min-h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-control px-2 text-xs text-chrome-muted transition-colors hover:bg-chrome-2 hover:text-chrome-ink"
+          >
+            <SignOutIcon aria-hidden className="size-4" />
+            Sign out
+          </button>
+        </form>
+      </div>
     </div>
   )
 }

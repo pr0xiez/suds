@@ -1,7 +1,24 @@
 import { randomUUID } from 'node:crypto'
+import {
+  ArrowRightIcon,
+  CalendarCheckIcon,
+  CalendarXIcon,
+  CarProfileIcon,
+  ClockCounterClockwiseIcon,
+  ClockIcon,
+  LightningIcon,
+  MapPinIcon,
+  PhoneIcon,
+  UserCircleIcon,
+  WrenchIcon,
+} from '@phosphor-icons/react/ssr'
+import clsx from 'clsx'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { bookingButton, bookingInput } from '@/components/bookingStyles'
+import { LogoMark } from '@/components/Logo'
 import { PublicBookingForm } from '@/components/PublicBookingForm'
+import { btnSecondary, EmptyState, labelClass } from '@/components/ui'
 import { getSessionUser } from '@/lib/auth/session'
 import { bookingTimeLabel } from '@/lib/bookingAvailability'
 import { addDays, dateKey, minutesToHuman, parseDateKey, todayWall } from '@/lib/dates'
@@ -10,6 +27,18 @@ import { formatCents } from '@/lib/money'
 import { publicAvailability, publicBusiness } from '@/lib/ops/bookings'
 
 export const dynamic = 'force-dynamic'
+
+/** Roomier secondary action, sized to sit beside the customer-facing controls. */
+const secondaryButton = clsx(btnSecondary, 'min-h-11! px-5!')
+
+/** Time pills: the same grid signed in (radios) and signed out (links). */
+const slotPill =
+  'flex min-h-11 items-center justify-center rounded-control border px-2 text-sm font-medium tabular-nums transition-colors'
+const slotIdle =
+  'border-line-strong/60 bg-surface text-ink hover:border-ink-faint hover:bg-surface-2'
+const slotActive = 'border-primary bg-primary text-on-primary'
+
+const panel = 'min-w-0 rounded-panel border border-line bg-surface shadow-panel'
 
 export default async function BusinessBookingPage({
   params,
@@ -48,184 +77,281 @@ export default async function BusinessBookingPage({
     : null
   const selectedTime = slots.find((slot) => slot.toISOString() === query.time)?.toISOString()
   const returnPath = `/b/${business.slug}?${new URLSearchParams({ serviceId: service?.id ?? '', day, ...(selectedTime ? { time: selectedTime } : {}) })}`
-  const button =
-    'inline-flex min-h-11 items-center justify-center rounded-xl bg-emerald-900 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-800'
+  const instant = settings.bookingMode === 'INSTANT'
   return (
-    <div className="min-h-dvh bg-[#f6f8f2] text-emerald-950">
-      <header className="border-b border-emerald-900/10 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-5">
-          <Link href={returnPath} className="text-lg font-bold">
+    <div className="flex min-h-dvh flex-col bg-canvas text-ink">
+      <header className="border-b border-line bg-surface">
+        <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
+          <Link
+            href={returnPath}
+            className="min-w-0 truncate font-display text-base font-bold text-ink"
+          >
             {business.name}
           </Link>
-          <Link href="/portal" className="text-sm font-semibold">
-            My appointments →
+          <Link
+            href="/portal"
+            className="inline-flex min-h-10 shrink-0 items-center gap-1.5 text-sm font-medium text-ink-muted transition-colors hover:text-ink"
+          >
+            <CalendarCheckIcon aria-hidden className="size-4" />
+            My appointments
           </Link>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:py-12">
-        <p className="text-xs font-bold uppercase tracking-[.2em] text-emerald-700">
-          Mobile detailing · powered by Suds
-        </p>
-        <h1 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">
-          A fresh start for your vehicle.
-        </h1>
-        <p className="mt-3 max-w-xl text-base text-slate-600">
-          Choose your detail, find a time, and we’ll come to you.
-        </p>
-        <div className="mt-6 flex flex-wrap gap-3 text-sm">
-          <span className="rounded-full border border-emerald-900/10 bg-white px-4 py-2">
-            Serving {business.serviceArea}
-          </span>
-          <span className="rounded-full border border-emerald-900/10 bg-white px-4 py-2">
-            {settings.bookingMode === 'INSTANT' ? 'Instant confirmation' : 'Owner approval'}
-          </span>
-        </div>
-        <div className="mt-8 grid items-start gap-6 md:grid-cols-[.8fr_1.2fr]">
-          <section className="rounded-2xl border border-emerald-900/10 bg-white p-5 sm:p-6">
-            <h2 className="text-lg font-semibold">1. Choose your detail</h2>
-            <form className="mt-4 space-y-3" method="get">
+
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 pt-10 pb-16 sm:px-6 sm:pt-14">
+        <section aria-labelledby="booking-title" className="max-w-2xl animate-rise">
+          <p className="text-sm text-ink-muted">Mobile detailing by {business.name}</p>
+          <h1
+            id="booking-title"
+            className="mt-3 font-display text-[2.4rem] font-bold leading-[1.05] text-balance sm:text-5xl"
+          >
+            A fresh start for your vehicle.
+          </h1>
+          <p className="mt-4 max-w-xl text-lg leading-relaxed text-ink-muted">
+            Choose your detail, find a time, and we’ll come to you.
+          </p>
+          <ul className="mt-6 flex flex-wrap gap-x-6 gap-y-2.5 text-sm text-ink">
+            <li className="flex min-w-0 items-center gap-2">
+              <MapPinIcon aria-hidden className="size-4.5 shrink-0 text-accent-ink" />
+              <span className="min-w-0">Serving {business.serviceArea}</span>
+            </li>
+            <li className="flex items-center gap-2">
+              {instant ? (
+                <LightningIcon aria-hidden className="size-4.5 shrink-0 text-accent-ink" />
+              ) : (
+                <ClockIcon aria-hidden className="size-4.5 shrink-0 text-accent-ink" />
+              )}
+              {instant ? 'Instant confirmation' : 'Owner approval'}
+            </li>
+          </ul>
+        </section>
+
+        <div className="mt-10 grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:grid-rows-[auto_1fr]">
+          <section aria-labelledby="choose-service" className={clsx(panel, 'p-5 sm:p-6')}>
+            <h2 id="choose-service" className="font-display text-xl font-bold">
+              Choose your detail
+            </h2>
+            <form className="mt-5 space-y-3" method="get">
               <input name="day" type="hidden" value={day} />
               {business.services.map((item) => (
                 <label
                   key={item.id}
-                  className="block cursor-pointer rounded-xl border border-emerald-900/10 p-4 has-checked:border-emerald-700 has-checked:bg-emerald-50"
+                  className="flex cursor-pointer items-start gap-3 rounded-control border border-line bg-surface p-4 transition-colors hover:border-line-strong has-checked:border-accent-line has-checked:bg-accent-soft has-focus-visible:ring-3 has-focus-visible:ring-focus/25"
                 >
-                  <span className="flex items-start gap-2">
-                    <input
-                      type="radio"
-                      name="serviceId"
-                      value={item.id}
-                      defaultChecked={service?.id === item.id}
-                      className="mt-1 accent-emerald-800"
-                    />
-                    <span className="flex-1">
-                      <span className="block font-semibold">{item.name}</span>
-                      <span className="mt-1 block text-sm text-slate-500">{item.description}</span>
-                      <span className="mt-2 block text-sm font-medium">
-                        {formatCents(item.priceCents)} · {minutesToHuman(item.durationMin)}
+                  <input
+                    type="radio"
+                    name="serviceId"
+                    value={item.id}
+                    defaultChecked={service?.id === item.id}
+                    className="mt-0.5 size-4 shrink-0 focus-visible:outline-none"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="min-w-0 font-semibold text-ink">{item.name}</span>
+                      <span className="shrink-0 font-semibold tabular-nums text-ink">
+                        {formatCents(item.priceCents)}
                       </span>
+                    </span>
+                    {item.description ? (
+                      <span className="mt-1 block text-sm leading-relaxed text-ink-muted">
+                        {item.description}
+                      </span>
+                    ) : null}
+                    <span className="mt-2 flex items-center gap-1.5 text-sm tabular-nums text-ink-muted">
+                      <ClockIcon aria-hidden className="size-4 shrink-0" />
+                      {minutesToHuman(item.durationMin)}
                     </span>
                   </span>
                 </label>
               ))}
-              <button type="submit" className={button}>
-                See available times
-              </button>
+              <div className="pt-2">
+                <button type="submit" className={clsx(secondaryButton, 'w-full')}>
+                  See available times
+                </button>
+              </div>
             </form>
-            <div className="mt-6 border-t border-emerald-900/10 pt-4 text-sm text-slate-600">
-              <p>Changes need {settings.cancellationHours} hours notice.</p>
-              <p className="mt-2">
-                A {settings.travelBufferMin}-minute travel buffer keeps appointments on time.
-              </p>
-              {settings.phone ? <p className="mt-2">Questions? {settings.phone}</p> : null}
-            </div>
           </section>
-          <section className="rounded-2xl border border-emerald-900/10 bg-white p-5 sm:p-6">
-            <h2 className="text-lg font-semibold">2. Choose a day and time</h2>
-            <p className="mt-1 text-sm text-slate-500">All times in {settings.timezone}.</p>
-            <form method="get" className="my-4 flex flex-wrap items-end gap-2">
+
+          <section
+            aria-labelledby="choose-time"
+            className={clsx(panel, 'p-5 sm:p-6 lg:col-start-2 lg:row-span-2 lg:row-start-1')}
+          >
+            <h2 id="choose-time" className="font-display text-xl font-bold">
+              Choose a day and time
+            </h2>
+            <p className="mt-1.5 text-sm text-ink-muted">All times in {settings.timezone}.</p>
+            <form method="get" className="mt-5 flex items-end gap-2">
               <input name="serviceId" type="hidden" value={service?.id ?? ''} />
-              <label className="flex-1 text-xs font-semibold uppercase text-slate-500">
-                Day
+              <label className="block min-w-0 flex-1">
+                <span className={labelClass}>Day</span>
                 <input
                   type="date"
                   name="day"
                   defaultValue={day}
                   min={dateKey(today)}
                   max={dateKey(addDays(today, settings.horizonDays))}
-                  className="mt-1 block w-full rounded-xl border border-emerald-900/15 px-3 py-3 text-sm text-slate-900"
+                  className={bookingInput}
                 />
               </label>
-              <button type="submit" className={button}>
+              <button type="submit" className={clsx(secondaryButton, 'shrink-0')}>
                 Find times
               </button>
             </form>
-            {!service ? (
-              <p className="rounded-xl bg-emerald-50 p-4 text-sm">
-                The detailer is updating their service menu. Please check back soon.
-              </p>
-            ) : slots.length === 0 ? (
-              <div className="rounded-xl bg-emerald-50 p-4">
-                <p className="text-sm">No times fit this service on this day.</p>
-                <Link
-                  className="mt-3 inline-block text-sm font-semibold underline"
-                  href={`/b/${business.slug}?${new URLSearchParams({ serviceId: service.id, day: dateKey(addDays(wall, 1)) })}`}
-                >
-                  Try the next day →
-                </Link>
-              </div>
-            ) : user?.emailVerifiedAt ? (
-              <PublicBookingForm
-                slug={business.slug}
-                serviceId={service.id}
-                slots={slots.map((slot) => ({
-                  value: slot.toISOString(),
-                  label: bookingTimeLabel(slot, settings.timezone),
-                }))}
-                request={settings.bookingMode === 'REQUEST'}
-                idempotencyKey={randomUUID()}
-                vehicles={(customer?.vehicles ?? []).map((vehicle) => ({
-                  id: vehicle.id,
-                  label: `${vehicle.year ?? ''} ${vehicle.make} ${vehicle.model}`.trim(),
-                }))}
-                phone={customer?.phone ?? ''}
-                address={customer?.address ?? ''}
-                selectedTime={selectedTime}
-              />
-            ) : (
-              <div className="space-y-4">
-                <div className="flex flex-wrap gap-2">
-                  {slots.map((slot) => (
+            <div className="mt-6 border-t border-line pt-6">
+              {!service ? (
+                <EmptyState
+                  icon={WrenchIcon}
+                  title="The detailer is updating their service menu."
+                  hint="Please check back soon."
+                />
+              ) : slots.length === 0 ? (
+                <EmptyState
+                  icon={CalendarXIcon}
+                  title="No times fit this service on this day."
+                  action={
                     <Link
-                      key={slot.toISOString()}
-                      href={`/b/${business.slug}?${new URLSearchParams({ serviceId: service.id, day, time: slot.toISOString() })}`}
-                      aria-current={selectedTime === slot.toISOString() ? 'true' : undefined}
-                      className={`rounded-lg border px-3 py-2 text-sm ${selectedTime === slot.toISOString() ? 'border-emerald-700 bg-emerald-50 font-semibold' : 'border-emerald-900/10 hover:bg-emerald-50'}`}
+                      className={secondaryButton}
+                      href={`/b/${business.slug}?${new URLSearchParams({ serviceId: service.id, day: dateKey(addDays(wall, 1)) })}`}
                     >
-                      {bookingTimeLabel(slot, settings.timezone)}
+                      Try the next day
+                      <ArrowRightIcon aria-hidden />
                     </Link>
-                  ))}
+                  }
+                />
+              ) : user?.emailVerifiedAt ? (
+                <PublicBookingForm
+                  slug={business.slug}
+                  serviceId={service.id}
+                  slots={slots.map((slot) => ({
+                    value: slot.toISOString(),
+                    label: bookingTimeLabel(slot, settings.timezone),
+                  }))}
+                  request={settings.bookingMode === 'REQUEST'}
+                  idempotencyKey={randomUUID()}
+                  vehicles={(customer?.vehicles ?? []).map((vehicle) => ({
+                    id: vehicle.id,
+                    label: `${vehicle.year ?? ''} ${vehicle.make} ${vehicle.model}`.trim(),
+                  }))}
+                  phone={customer?.phone ?? ''}
+                  address={customer?.address ?? ''}
+                  selectedTime={selectedTime}
+                />
+              ) : (
+                <div className="space-y-5">
+                  <div>
+                    <p className="mb-3 text-sm font-medium text-ink">Choose your time</p>
+                    <div className="-m-1 grid max-h-80 grid-cols-2 gap-2 overflow-y-auto p-1 sm:grid-cols-3">
+                      {slots.map((slot) => (
+                        <Link
+                          key={slot.toISOString()}
+                          href={`/b/${business.slug}?${new URLSearchParams({ serviceId: service.id, day, time: slot.toISOString() })}`}
+                          aria-current={selectedTime === slot.toISOString() ? 'true' : undefined}
+                          className={clsx(
+                            slotPill,
+                            selectedTime === slot.toISOString() ? slotActive : slotIdle,
+                          )}
+                        >
+                          {bookingTimeLabel(slot, settings.timezone)}
+                        </Link>
+                      ))}
+                    </div>
+                    {selectedTime ? (
+                      <p className="mt-3 text-sm text-ink">
+                        <span className="font-semibold">
+                          Selected: {bookingTimeLabel(new Date(selectedTime), settings.timezone)}.
+                        </span>{' '}
+                        <span className="text-ink-muted">
+                          This time is reserved when your booking is confirmed.
+                        </span>
+                      </p>
+                    ) : (
+                      <p className="mt-3 text-sm text-ink-muted">
+                        Select a time to carry it into your customer account.
+                      </p>
+                    )}
+                  </div>
+                  <div className="rounded-panel border border-line bg-surface-2 p-4 sm:p-5">
+                    <div className="flex items-start gap-3">
+                      <UserCircleIcon aria-hidden className="size-6 shrink-0 text-accent-ink" />
+                      <div className="min-w-0">
+                        <p className="font-semibold text-ink">
+                          {user
+                            ? 'One step left: verify your email'
+                            : 'Book with your customer account'}
+                        </p>
+                        <p className="mt-1 text-sm leading-relaxed text-ink-muted">
+                          {user
+                            ? 'Verify your email to confirm your appointment.'
+                            : 'Create your customer account or sign in to confirm a time and manage your appointments.'}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+                      <Link
+                        className={bookingButton}
+                        href={
+                          user
+                            ? `/verify?next=${encodeURIComponent(returnPath)}`
+                            : `/signup?kind=CUSTOMER&next=${encodeURIComponent(returnPath)}`
+                        }
+                      >
+                        {user ? 'Verify email' : 'Create customer account'}
+                      </Link>
+                      {!user ? (
+                        <Link
+                          className={secondaryButton}
+                          href={`/login?next=${encodeURIComponent(returnPath)}`}
+                        >
+                          Sign in
+                        </Link>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
-                {selectedTime ? (
-                  <p className="text-sm font-semibold">
-                    Selected: {bookingTimeLabel(new Date(selectedTime), settings.timezone)}. This
-                    time is reserved when your booking is confirmed.
-                  </p>
-                ) : (
-                  <p className="text-xs text-slate-500">
-                    Select a time to carry it into your customer account.
-                  </p>
-                )}
-                <p className="text-sm text-slate-600">
-                  {user
-                    ? 'Verify your email to confirm your appointment.'
-                    : 'Create your customer account or sign in to confirm a time and manage your appointments.'}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  <Link
-                    className={button}
-                    href={
-                      user
-                        ? `/verify?next=${encodeURIComponent(returnPath)}`
-                        : `/signup?kind=CUSTOMER&next=${encodeURIComponent(returnPath)}`
-                    }
-                  >
-                    {user ? 'Verify email' : 'Create customer account'}
-                  </Link>
-                  {!user ? (
-                    <Link
-                      className="rounded-xl border border-emerald-900/15 px-5 py-3 text-sm font-semibold"
-                      href={`/login?next=${encodeURIComponent(returnPath)}`}
-                    >
-                      Sign in
-                    </Link>
-                  ) : null}
-                </div>
-              </div>
-            )}
+              )}
+            </div>
+          </section>
+
+          <section
+            aria-label="Booking policies"
+            className="min-w-0 px-1 lg:col-start-1 lg:row-start-2"
+          >
+            <ul className="space-y-3 text-sm text-ink-muted">
+              <li className="flex items-start gap-3">
+                <ClockCounterClockwiseIcon
+                  aria-hidden
+                  className="mt-0.5 size-4 shrink-0 text-ink-faint"
+                />
+                <span className="min-w-0">
+                  Changes need {settings.cancellationHours} hours notice.
+                </span>
+              </li>
+              <li className="flex items-start gap-3">
+                <CarProfileIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-faint" />
+                <span className="min-w-0">
+                  A {settings.travelBufferMin}-minute travel buffer keeps appointments on time.
+                </span>
+              </li>
+              {settings.phone ? (
+                <li className="flex items-start gap-3">
+                  <PhoneIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-faint" />
+                  <span className="min-w-0">
+                    Questions?{' '}
+                    <span className="font-medium tabular-nums text-ink">{settings.phone}</span>
+                  </span>
+                </li>
+              ) : null}
+            </ul>
           </section>
         </div>
       </main>
+
+      <footer className="mx-auto w-full max-w-5xl px-4 pb-10 sm:px-6">
+        <p className="flex items-center gap-2 border-t border-line pt-6 text-sm text-ink-faint">
+          <LogoMark className="size-4" />
+          Booking powered by Suds
+        </p>
+      </footer>
     </div>
   )
 }

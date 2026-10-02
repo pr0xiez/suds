@@ -1,3 +1,12 @@
+import {
+  ArrowCounterClockwiseIcon,
+  ArrowSquareOutIcon,
+  CheckIcon,
+  ClipboardTextIcon,
+  CopyIcon,
+  DownloadSimpleIcon,
+  TrashIcon,
+} from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { deletePostAction, markPostedAction, revertToDraftAction } from '@/app/actions/social'
@@ -10,6 +19,7 @@ import {
   btnSecondary,
   btnSmall,
   Card,
+  PageHeader,
   PLATFORM_META,
   PostStatusBadge,
 } from '@/components/ui'
@@ -53,102 +63,131 @@ export default async function PostPage({
   if (!post) notFound()
   const tz = settings.timezone
 
+  const overdue =
+    post.status === 'SCHEDULED' && post.scheduledFor !== null && post.scheduledFor < new Date()
+
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">Post</h1>
-            <PostStatusBadge
-              status={post.status}
-              overdue={
-                post.status === 'SCHEDULED' &&
-                post.scheduledFor !== null &&
-                post.scheduledFor < new Date()
-              }
-            />
-          </div>
-          <p className="mt-1 text-sm text-slate-500">
-            {post.status === 'POSTED' && post.postedAt
-              ? `Posted ${formatDateTime(post.postedAt, tz)}`
-              : post.scheduledFor
-                ? `Scheduled for ${formatDateTime(post.scheduledFor, tz)}`
-                : 'Not scheduled yet'}
-            {post.job
-              ? ` · from ${describeVehicle(post.job.vehicle)} (${post.job.customer.name})`
-              : ''}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          {post.job ? (
-            <Link href={`/jobs/${post.job.id}`} className={btnSecondary}>
-              View job
-            </Link>
-          ) : null}
-          {post.status === 'POSTED' ? (
-            <form action={revertToDraftAction}>
+      <PageHeader
+        title="Post"
+        back={{ href: '/social', label: 'Content calendar' }}
+        subtitle={
+          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <PostStatusBadge status={post.status} overdue={overdue} />
+            <span className="min-w-0">
+              {post.status === 'POSTED' && post.postedAt
+                ? `Posted ${formatDateTime(post.postedAt, tz)}`
+                : post.scheduledFor
+                  ? `Scheduled for ${formatDateTime(post.scheduledFor, tz)}`
+                  : 'Not scheduled yet'}
+              {post.job
+                ? ` · from ${describeVehicle(post.job.vehicle)} (${post.job.customer.name})`
+                : ''}
+            </span>
+          </span>
+        }
+        actions={
+          <>
+            {post.job ? (
+              <Link href={`/jobs/${post.job.id}`} className={btnSecondary}>
+                <ClipboardTextIcon aria-hidden />
+                View job
+              </Link>
+            ) : null}
+            {post.status === 'POSTED' ? (
+              <form action={revertToDraftAction}>
+                <input type="hidden" name="id" value={post.id} />
+                <button type="submit" className={btnSecondary}>
+                  <ArrowCounterClockwiseIcon aria-hidden />
+                  Back to draft
+                </button>
+              </form>
+            ) : (
+              <form action={markPostedAction}>
+                <input type="hidden" name="id" value={post.id} />
+                <input type="hidden" name="back" value={`/social/${post.id}`} />
+                <button type="submit" className={btnSecondary}>
+                  <CheckIcon aria-hidden />
+                  Mark posted
+                </button>
+              </form>
+            )}
+            <form action={deletePostAction}>
               <input type="hidden" name="id" value={post.id} />
-              <button type="submit" className={btnSecondary}>
-                Back to draft
-              </button>
+              <ConfirmSubmit
+                message="Delete this post? Photos stay in the library."
+                className={btnDanger}
+              >
+                <TrashIcon aria-hidden />
+                Delete
+              </ConfirmSubmit>
             </form>
-          ) : (
-            <form action={markPostedAction}>
-              <input type="hidden" name="id" value={post.id} />
-              <input type="hidden" name="back" value={`/social/${post.id}`} />
-              <button type="submit" className={btnSecondary}>
-                Mark posted ✓
-              </button>
-            </form>
-          )}
-          <form action={deletePostAction}>
-            <input type="hidden" name="id" value={post.id} />
-            <ConfirmSubmit
-              message="Delete this post? Photos stay in the library."
-              className={btnDanger}
-            >
-              Delete
-            </ConfirmSubmit>
-          </form>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       <ErrorBanner message={error} />
       <SuccessBanner message={saved ? 'Saved.' : null} />
 
       {post.status !== 'DRAFT' ? (
-        <Card title="Posting kit" className="mb-6">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <CopyButton text={post.caption} className={`${btnSecondary} ${btnSmall}`}>
-              Copy caption
-            </CopyButton>
-            {post.photos
-              .filter((pp) => pp.photo.approvedForMarketing)
-              .map((pp, index) => (
-                <a
-                  key={pp.photoId}
-                  href={`/api/photos/${pp.photoId}`}
-                  download={`post-photo-${index + 1}`}
-                  className={`${btnSecondary} ${btnSmall}`}
-                >
-                  ↓ Photo {index + 1}
-                </a>
-              ))}
-            {post.platforms.map((platform) => (
-              <a
-                key={platform}
-                href={platformOpenUrl(platform, settings)}
-                target="_blank"
-                rel="noreferrer"
-                className={`${btnSecondary} ${btnSmall}`}
-              >
-                Open {PLATFORM_META[platform].label} ↗
-              </a>
-            ))}
-            <span className="text-xs text-slate-400">
-              Download → post in the app → “Mark posted ✓”
-            </span>
-          </div>
+        <Card title="Posting kit" className="mb-6" padded={false}>
+          <ol className="divide-y divide-line">
+            <li className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5">
+              <span className="flex min-w-0 items-center gap-3 text-sm text-ink sm:w-56 sm:shrink-0">
+                <StepNumber n={1} />
+                Copy the caption and photos
+              </span>
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                <CopyButton text={post.caption} className={`${btnSecondary} ${btnSmall}`}>
+                  <CopyIcon aria-hidden />
+                  Copy caption
+                </CopyButton>
+                {post.photos
+                  .filter((pp) => pp.photo.approvedForMarketing)
+                  .map((pp, index) => (
+                    <a
+                      key={pp.photoId}
+                      href={`/api/photos/${pp.photoId}`}
+                      download={`post-photo-${index + 1}`}
+                      className={`${btnSecondary} ${btnSmall}`}
+                    >
+                      <DownloadSimpleIcon aria-hidden />
+                      Photo {index + 1}
+                    </a>
+                  ))}
+              </span>
+            </li>
+            <li className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5">
+              <span className="flex min-w-0 items-center gap-3 text-sm text-ink sm:w-56 sm:shrink-0">
+                <StepNumber n={2} />
+                Post it in each app
+              </span>
+              <span className="flex min-w-0 flex-wrap items-center gap-2">
+                {post.platforms.map((platform) => {
+                  const PlatformIcon = PLATFORM_META[platform].icon
+                  return (
+                    <a
+                      key={platform}
+                      href={platformOpenUrl(platform, settings)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className={`${btnSecondary} ${btnSmall}`}
+                    >
+                      <PlatformIcon aria-hidden />
+                      Open {PLATFORM_META[platform].label}
+                      <ArrowSquareOutIcon aria-hidden className="text-ink-faint" />
+                    </a>
+                  )
+                })}
+              </span>
+            </li>
+            <li className="flex items-center gap-3 px-4 py-3.5 text-sm text-ink sm:px-5">
+              <StepNumber n={3} />
+              <span className="min-w-0">
+                Then choose <span className="font-medium">Mark posted</span> here.
+              </span>
+            </li>
+          </ol>
         </Card>
       ) : null}
 
@@ -175,5 +214,13 @@ export default async function PostPage({
         }}
       />
     </div>
+  )
+}
+
+function StepNumber({ n }: { n: number }) {
+  return (
+    <span className="grid size-6 shrink-0 place-items-center rounded-full bg-surface-2 text-xs font-semibold tabular-nums text-ink-muted">
+      {n}
+    </span>
   )
 }

@@ -1,6 +1,7 @@
 'use client'
+import { ArrowClockwiseIcon, FileVideoIcon, TrashIcon } from '@phosphor-icons/react/ssr'
 import { useEffect, useState } from 'react'
-import { btnSecondary, btnSmall, Card } from '@/components/ui'
+import { Badge, btnDanger, btnSecondary, btnSmall, Card } from '@/components/ui'
 
 type Source = { id: string; originalName: string; sizeBytes: number; status: string }
 export function VideoSources() {
@@ -50,34 +51,55 @@ export function VideoSources() {
           className={`${btnSecondary} ${btnSmall}`}
           onClick={() => setRevision((value) => value + 1)}
         >
+          <ArrowClockwiseIcon aria-hidden />
           Refresh
         </button>
       }
+      padded={false}
     >
-      <p className="mb-3 text-sm text-slate-500">
+      <p className="border-b border-line px-4 py-3 text-sm text-ink-muted sm:px-5">
         Remove originals you no longer need to free storage. Completed edits are saved separately.
       </p>
-      {sources.length === 0 && <p className="text-sm text-slate-500">No saved source videos.</p>}
-      <ul className="divide-y divide-slate-100">
+      {sources.length === 0 && (
+        <p className="flex items-center gap-2 px-4 py-4 text-sm text-ink-muted sm:px-5">
+          <FileVideoIcon aria-hidden className="size-4 shrink-0 text-ink-faint" />
+          No saved source videos.
+        </p>
+      )}
+      <ul className="divide-y divide-line empty:hidden">
         {sources.map((source) => (
-          <li key={source.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
-            <span className="min-w-0 break-all text-sm">
-              {source.originalName} · {(source.sizeBytes / 1024 / 1024).toFixed(1)} MB
-              {source.status === 'DELETING' ? ' · cleanup pending' : ''}
+          <li
+            key={source.id}
+            className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-5"
+          >
+            <span className="flex min-w-0 flex-1 items-center gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-control bg-surface-2 text-ink-faint">
+                <FileVideoIcon aria-hidden className="size-5" />
+              </span>
+              <span className="min-w-0">
+                <span className="block break-all text-sm font-medium text-ink">
+                  {source.originalName}
+                </span>
+                <span className="mt-0.5 flex flex-wrap items-center gap-2 text-xs tabular-nums text-ink-muted">
+                  {(source.sizeBytes / 1024 / 1024).toFixed(1)} MB
+                  {source.status === 'DELETING' ? <Badge tone="warn">cleanup pending</Badge> : null}
+                </span>
+              </span>
             </span>
             <button
               type="button"
               disabled={!!busy}
-              className={`${btnSecondary} ${btnSmall}`}
+              className={`${btnDanger} ${btnSmall}`}
               onClick={() => remove(source.id)}
             >
+              <TrashIcon aria-hidden />
               {busy === source.id ? 'Deleting…' : 'Delete source'}
             </button>
           </li>
         ))}
       </ul>
       {message && (
-        <p role="status" className="mt-3 text-sm">
+        <p role="status" className="border-t border-line px-4 py-3 text-sm text-ink sm:px-5">
           {message}
         </p>
       )}

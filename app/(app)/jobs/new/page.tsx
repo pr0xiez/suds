@@ -1,6 +1,7 @@
+import { PlusIcon, UsersThreeIcon } from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
 import { JobForm } from '@/components/JobForm'
-import { EmptyState, PageHeader } from '@/components/ui'
+import { btnPrimary, Card, EmptyState, linkClass, PageHeader } from '@/components/ui'
 import { requireUser } from '@/lib/auth/session'
 import { describeVehicle } from '@/lib/captions'
 import { toDatetimeLocalValue } from '@/lib/dates'
@@ -30,15 +31,20 @@ export default async function NewJobPage({
   if (customers.length === 0) {
     return (
       <div>
-        <PageHeader title="New job" />
-        <EmptyState
-          title="No customers yet"
-          hint={
-            <Link href="/customers/new" className="text-cyan-700 hover:underline">
-              Add your first customer to book a job
-            </Link>
-          }
-        />
+        <PageHeader title="New job" back={{ href: '/jobs', label: 'Jobs' }} />
+        <Card>
+          <EmptyState
+            icon={UsersThreeIcon}
+            title="No customers yet"
+            hint="Add your first customer to book a job."
+            action={
+              <Link href="/customers/new" className={btnPrimary}>
+                <PlusIcon aria-hidden />
+                Add a customer
+              </Link>
+            }
+          />
+        </Card>
       </div>
     )
   }
@@ -53,10 +59,11 @@ export default async function NewJobPage({
     <div>
       <PageHeader
         title="New job"
+        back={{ href: '/jobs', label: 'Jobs' }}
         subtitle={
           <>
             Need someone new?{' '}
-            <Link href="/customers/new" className="text-cyan-700 hover:underline">
+            <Link href="/customers/new" className={linkClass}>
               Add a customer
             </Link>
           </>

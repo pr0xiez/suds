@@ -1,9 +1,13 @@
+import { CarProfileIcon, PlusIcon } from '@phosphor-icons/react/ssr'
+import clsx from 'clsx'
 import { savePortalVehicleAction } from '@/app/actions/bookings'
 import { BookingActionForm } from '@/components/BookingActionForm'
 import { bookingInput } from '@/components/bookingStyles'
-import { Field } from '@/components/ui'
+import { btnSecondary, EmptyState, Field, PageHeader } from '@/components/ui'
 import { requirePortalUser } from '@/lib/bookingCustomer'
 import { prisma } from '@/lib/db/client'
+
+const secondaryButton = clsx(btnSecondary, 'min-h-11! px-5!')
 
 export default async function PortalVehiclesPage() {
   const user = await requirePortalUser('/portal/vehicles')
@@ -16,33 +20,48 @@ export default async function PortalVehiclesPage() {
     },
   })
   return (
-    <div>
-      <h1 className="text-3xl font-bold">My vehicles</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        Keep your vehicle details ready for the next appointment.
-      </p>
+    <div data-portal-section="vehicles">
+      <PageHeader
+        title="My vehicles"
+        subtitle="Keep your vehicle details ready for the next appointment."
+      />
       {!customers.length ? (
-        <p className="mt-6 rounded-2xl bg-white p-6 text-sm text-slate-500">
-          Your vehicle will appear here after your first booking or after accepting your detailer’s
-          customer invitation.
-        </p>
+        <EmptyState
+          icon={CarProfileIcon}
+          title="No vehicles yet"
+          hint="Your vehicle will appear here after your first booking or after accepting your detailer’s customer invitation."
+        />
       ) : null}
       {customers.map((customer) => (
-        <section className="mt-6" key={customer.id}>
-          <h2 className="mb-4 text-lg font-semibold">With {customer.business.name}</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+        <section className="mt-10 first-of-type:mt-0" key={customer.id}>
+          <h2 className="text-base font-semibold text-ink">With {customer.business.name}</h2>
+          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
             {[...customer.vehicles, { id: '', make: '', model: '', year: null, color: '' }].map(
               (vehicle) => (
                 <article
                   key={vehicle.id || 'new'}
-                  className="rounded-2xl border border-emerald-900/10 bg-white p-5"
+                  className={clsx(
+                    'min-w-0 rounded-panel border p-5',
+                    vehicle.id
+                      ? 'border-line bg-surface shadow-panel'
+                      : 'border-dashed border-line-strong/60 bg-surface/60',
+                  )}
                 >
-                  <h3 className="mb-4 font-semibold">
-                    {vehicle.id ? `${vehicle.make} ${vehicle.model}` : 'Add a vehicle'}
+                  <h3 className="mb-4 flex items-center gap-2 font-semibold text-ink">
+                    {vehicle.id ? (
+                      <CarProfileIcon aria-hidden className="size-5 shrink-0 text-ink-muted" />
+                    ) : (
+                      <PlusIcon aria-hidden className="size-5 shrink-0 text-accent-ink" />
+                    )}
+                    <span className="min-w-0 truncate">
+                      {vehicle.id ? `${vehicle.make} ${vehicle.model}` : 'Add a vehicle'}
+                    </span>
                   </h3>
                   <BookingActionForm
                     action={savePortalVehicleAction}
                     label={vehicle.id ? 'Save vehicle' : 'Add vehicle'}
+                    icon={vehicle.id ? undefined : <PlusIcon aria-hidden />}
+                    submitClassName={vehicle.id ? secondaryButton : undefined}
                   >
                     <input name="customerId" type="hidden" value={customer.id} />
                     <input name="id" type="hidden" value={vehicle.id} />

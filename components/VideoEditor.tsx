@@ -1,10 +1,64 @@
 'use client'
+import type { Icon } from '@phosphor-icons/react'
+import {
+  ArrowClockwiseIcon,
+  ArrowRightIcon,
+  DownloadSimpleIcon,
+  FilmStripIcon,
+  ImagesIcon,
+  MagicWandIcon,
+  VideoCameraIcon,
+  WarningIcon,
+} from '@phosphor-icons/react/ssr'
+import clsx from 'clsx'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
-import { btnPrimary, btnSecondary, Card, Field, inputClass, selectClass } from '@/components/ui'
+import { ErrorBanner } from '@/components/banners'
+import {
+  Badge,
+  btnPrimary,
+  btnSecondary,
+  Card,
+  EmptyState,
+  Field,
+  hintClass,
+  inputClass,
+  labelClass,
+  selectClass,
+  type Tone,
+} from '@/components/ui'
 import { VideoSources } from '@/components/VideoSources'
 import { uploadDirectMedia } from '@/lib/media/clientUpload'
 import type { VideoProject } from '@/lib/videoEditing'
+
+const SOURCE_MODES: Array<{ value: string; label: string; detail: string; icon: Icon }> = [
+  { value: 'video', label: 'Video clip', detail: 'MP4 or MOV, up to 50 MB', icon: VideoCameraIcon },
+  {
+    value: 'photos',
+    label: 'Job photos',
+    detail: '2-8 approved photos, four seconds each',
+    icon: ImagesIcon,
+  },
+]
+
+/** The native file picker button restyled as a quiet secondary control. */
+const fileInputClass =
+  'block min-h-10 w-full cursor-pointer rounded-control border border-line-strong bg-surface px-1 py-1 text-sm text-ink-muted transition-colors hover:border-ink-faint focus:border-focus focus:outline-none focus:ring-3 focus:ring-focus/20 file:mr-3 file:cursor-pointer file:rounded-[0.5rem] file:border-0 file:bg-surface-2 file:px-3 file:py-1 file:text-sm file:font-medium file:text-ink hover:file:bg-surface-3'
+
+const consentBox =
+  'flex cursor-pointer items-start gap-3 rounded-control border border-line bg-surface-2 p-3 text-sm text-ink has-[:checked]:border-accent-line has-[:checked]:bg-accent-soft'
+
+function editStatus(
+  runStatus: string | undefined,
+  projectStatus: string,
+): { label: string; tone: Tone } {
+  if (runStatus === 'UNCERTAIN') return { label: 'Needs review', tone: 'warn' }
+  if (projectStatus === 'failed' || runStatus === 'FAILED')
+    return { label: 'Failed', tone: 'danger' }
+  if (projectStatus === 'completed') return { label: 'Ready to review', tone: 'ok' }
+  if (runStatus === 'QUEUED') return { label: 'Queued', tone: 'info' }
+  return { label: 'Editing', tone: 'warn' }
+}
 
 type Run = {
   id: string
@@ -142,39 +196,53 @@ export function VideoEditor({
   }
   const processing = Boolean(run && ['QUEUED', 'SUBMITTING', 'PROCESSING'].includes(run.status))
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <Card title="Your source">
-        <div className="mb-4 flex gap-2" role="group" aria-label="Short source">
-          <button
-            type="button"
-            className={mode === 'video' ? btnPrimary : btnSecondary}
-            aria-pressed={mode === 'video'}
-            onClick={() => {
-              setMode('video')
-              setRetryKey('')
-            }}
-          >
-            Video clip
-          </button>
-          <button
-            type="button"
-            className={mode === 'photos' ? btnPrimary : btnSecondary}
-            aria-pressed={mode === 'photos'}
-            onClick={() => {
-              setMode('photos')
-              setRetryKey('')
-            }}
-          >
-            Job photos
-          </button>
+        <div
+          className="mb-5 grid grid-cols-1 gap-2 sm:grid-cols-2"
+          role="group"
+          aria-label="Short source"
+        >
+          {SOURCE_MODES.map(({ value, label, detail, icon: ModeIcon }) => (
+            <button
+              key={value}
+              type="button"
+              className={clsx(
+                'flex min-h-12 items-start gap-3 rounded-control border px-3 py-3 text-left transition-colors',
+                mode === value
+                  ? 'border-accent-line bg-accent-soft'
+                  : 'border-line bg-surface hover:border-line-strong hover:bg-surface-2',
+              )}
+              aria-pressed={mode === value}
+              onClick={() => {
+                setMode(value)
+                setRetryKey('')
+              }}
+            >
+              <ModeIcon
+                aria-hidden
+                className={clsx(
+                  'mt-0.5 size-5 shrink-0',
+                  mode === value ? 'text-accent-ink' : 'text-ink-faint',
+                )}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-ink">{label}</span>
+                <span className="mt-0.5 block text-xs text-ink-muted">{detail}</span>
+              </span>
+            </button>
+          ))}
         </div>
         {!(mode === 'photos' ? photosConfigured : configured) && (
-          <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-            This editing connection is not enabled. Ask the Suds administrator to connect editing
-            and media storage.
-          </p>
+          <div className="mb-5 flex items-start gap-2.5 rounded-control border border-warn-line bg-warn-soft px-3 py-2.5 text-sm text-ink">
+            <WarningIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-warn" />
+            <p className="min-w-0">
+              This editing connection is not enabled. Ask the Suds administrator to connect editing
+              and media storage.
+            </p>
+          </div>
         )}
-        <form onSubmit={submit} className="space-y-4">
+        <form onSubmit={submit} className="space-y-5">
           <Field label="Post title">
             <input
               name="title"
@@ -192,13 +260,13 @@ export function VideoEditor({
                   type="file"
                   accept="video/mp4,video/quicktime,.mp4,.mov"
                   required
-                  className={inputClass}
+                  className={fileInputClass}
                   onChange={() => {
                     setRetryKey('')
                     setUploaded(null)
                   }}
                 />
-                <p className="text-xs text-slate-500">
+                <p className={hintClass}>
                   MP4 or MOV, up to 50 MB. Start with a short vertical clip.
                 </p>
               </Field>
@@ -212,11 +280,17 @@ export function VideoEditor({
             </>
           ) : (
             <div>
-              <p className="mb-2 text-sm text-slate-500">
-                Choose 2–8 approved photos in the order they should appear. Each plays for four
+              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3">
+                <p className={clsx(labelClass, 'mb-0')}>Photos</p>
+                <p className="text-xs tabular-nums text-ink-muted">
+                  {photoIds.length} of 8 selected
+                </p>
+              </div>
+              <p className="mb-3 text-xs text-ink-muted">
+                Choose 2-8 approved photos in the order they should appear. Each plays for four
                 seconds.
               </p>
-              <div className="grid max-h-80 grid-cols-3 gap-2 overflow-y-auto">
+              <div className="-m-1 grid max-h-80 grid-cols-3 gap-2 overflow-y-auto p-1 sm:grid-cols-4">
                 {photos.map((photo) => (
                   <button
                     key={photo.id}
@@ -232,7 +306,12 @@ export function VideoEditor({
                             : ids,
                       )
                     }}
-                    className="relative overflow-hidden rounded-lg border-2 border-slate-200"
+                    className={clsx(
+                      'relative overflow-hidden rounded-control bg-surface-2 transition-shadow',
+                      photoIds.includes(photo.id)
+                        ? 'ring-2 ring-accent-ink'
+                        : 'ring-1 ring-line hover:ring-line-strong',
+                    )}
                   >
                     <img
                       src={`/api/photos/${photo.id}`}
@@ -240,7 +319,7 @@ export function VideoEditor({
                       className="aspect-square w-full object-cover"
                     />
                     {photoIds.includes(photo.id) && (
-                      <span className="absolute right-1 top-1 rounded-full bg-cyan-700 px-2 text-white">
+                      <span className="absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-accent text-xs font-bold tabular-nums text-on-accent shadow-float">
                         {photoIds.indexOf(photo.id) + 1}
                       </span>
                     )}
@@ -248,15 +327,25 @@ export function VideoEditor({
                 ))}
               </div>
               {!photos.length && (
-                <p className="text-sm text-slate-500">
-                  Approve job or library photos for marketing to make your first short.
-                </p>
+                <EmptyState
+                  icon={ImagesIcon}
+                  title="No approved photos yet"
+                  hint="Approve job or library photos for marketing to make your first short."
+                />
               )}
             </div>
           )}
-          <label className="flex items-start gap-2 text-sm">
-            <input type="checkbox" name="approved" value="true" required />
-            <span>I have permission to use this footage and send it to the AI editor.</span>
+          <label className={consentBox}>
+            <input
+              type="checkbox"
+              name="approved"
+              value="true"
+              required
+              className="mt-0.5 size-4 shrink-0"
+            />
+            <span className="min-w-0">
+              I have permission to use this footage and send it to the AI editor.
+            </span>
           </label>
           <button
             type="submit"
@@ -269,24 +358,21 @@ export function VideoEditor({
               (mode === 'photos' && photoIds.length < 2)
             }
           >
+            <MagicWandIcon aria-hidden />
             {busy
               ? 'Uploading and preparing…'
               : mode === 'photos'
                 ? 'Create photo short'
                 : 'Auto-edit my short'}
           </button>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-ink-muted">
             AI edits use the connected account’s credits. Your edit continues in the background and
             is saved in your business history. Review before posting.
           </p>
         </form>
       </Card>
-      <Card title="Review your edits">
-        {error && (
-          <p role="alert" className="mb-4 rounded-lg bg-rose-50 p-3 text-sm text-rose-800">
-            {error}
-          </p>
-        )}
+      <Card title="Review your edits" className="lg:self-start">
+        <ErrorBanner message={error} />
         {runs.length > 0 && (
           <Field label="Saved edits">
             <select
@@ -306,12 +392,21 @@ export function VideoEditor({
           </Field>
         )}
         {!project && (
-          <p className="text-sm text-slate-500">Your saved edited clips will appear here.</p>
+          <EmptyState
+            icon={FilmStripIcon}
+            title="No edits yet"
+            hint="Your saved edited clips will appear here."
+          />
         )}
         {project && (
-          <div className="mt-4 space-y-4">
-            <p className="font-medium">{project.title}</p>
-            <p role="status" className="text-sm text-slate-500">
+          <div className={clsx('space-y-4', runs.length > 0 && 'mt-5 border-t border-line pt-5')}>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <p className="min-w-0 font-semibold text-ink">{project.title}</p>
+              <Badge tone={editStatus(run?.status, project.status).tone}>
+                {editStatus(run?.status, project.status).label}
+              </Badge>
+            </div>
+            <p role="status" className="text-sm text-ink-muted">
               {run?.status === 'UNCERTAIN'
                 ? 'The provider submission needs administrator review before another attempt.'
                 : project.status === 'failed'
@@ -322,9 +417,18 @@ export function VideoEditor({
                       ? 'Queued for editing. You can leave this page.'
                       : 'AI editing in progress. You can return on any device.'}
             </p>
-            {run?.error && <p className="text-sm text-rose-800">{run.error}</p>}
+            {processing && project.status !== 'completed' && project.status !== 'failed' ? (
+              <div
+                aria-hidden
+                className="grid aspect-video w-full place-items-center rounded-control border border-dashed border-line-strong/60 bg-surface-2 text-ink-faint"
+              >
+                <FilmStripIcon className="size-7" />
+              </div>
+            ) : null}
+            {run?.error && <p className="text-sm text-danger">{run.error}</p>}
             {run?.status === 'FAILED' && (
               <button type="button" className={btnSecondary} disabled={busy} onClick={resume}>
+                <ArrowClockwiseIcon aria-hidden />
                 Resume saved edit
               </button>
             )}
@@ -333,19 +437,20 @@ export function VideoEditor({
                 controls
                 playsInline
                 src={project.directUrl}
-                className="max-h-[32rem] w-full rounded-lg bg-black"
+                className="max-h-[32rem] w-full rounded-control bg-chrome"
               >
                 <track kind="captions" />
               </video>
             )}
             {project.status === 'completed' && (
-              <label className="flex items-start gap-2 text-sm">
+              <label className={consentBox}>
                 <input
                   type="checkbox"
                   checked={reviewed}
                   onChange={(e) => setReviewed(e.target.checked)}
+                  className="mt-0.5 size-4 shrink-0"
                 />
-                I reviewed this short and approve it for my post.
+                <span className="min-w-0">I reviewed this short and approve it for my post.</span>
               </label>
             )}
             {reviewed && project.status === 'completed' && project.downloadUrl && (
@@ -356,14 +461,16 @@ export function VideoEditor({
                   rel="noreferrer"
                   className={btnPrimary}
                 >
+                  <DownloadSimpleIcon aria-hidden />
                   Download edited short
                 </a>
                 <Link href="/marketing" className={btnSecondary}>
                   Prepare the caption
+                  <ArrowRightIcon aria-hidden />
                 </Link>
               </div>
             )}
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-ink-muted">
               Download and publish from your social account. Editing does not publish your video.
             </p>
           </div>

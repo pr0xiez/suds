@@ -1,9 +1,19 @@
-import clsx from 'clsx'
+import { ImagesIcon, LockSimpleIcon, UploadSimpleIcon } from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
 import { ErrorBanner } from '@/components/banners'
 import { MediaUploader } from '@/components/MediaUploader'
 import { PhotoTile } from '@/components/PhotoTile'
-import { btnSecondary, Card, EmptyState, PageHeader, selectClass } from '@/components/ui'
+import {
+  btnSecondary,
+  Card,
+  EmptyState,
+  Field,
+  PageHeader,
+  PHOTO_KIND_META,
+  segmentClass,
+  segmentTrack,
+  selectClass,
+} from '@/components/ui'
 import { requireUser } from '@/lib/auth/session'
 import { prisma } from '@/lib/db/client'
 import type { Prisma } from '@/lib/generated/prisma/client'
@@ -13,6 +23,10 @@ export const metadata = { title: 'Library' }
 
 const KINDS = ['ALL', 'AFTER', 'BEFORE', 'OTHER'] as const
 type KindFilter = (typeof KINDS)[number]
+
+/** The native file picker button restyled as a quiet secondary control. */
+const fileInputClass =
+  'block min-h-10 w-full cursor-pointer rounded-control border border-line-strong bg-surface px-1 py-1 text-sm text-ink-muted transition-colors hover:border-ink-faint focus:border-focus focus:outline-none focus:ring-3 focus:ring-focus/20 file:mr-3 file:cursor-pointer file:rounded-[0.5rem] file:border-0 file:bg-surface-2 file:px-3 file:py-1 file:text-sm file:font-medium file:text-ink hover:file:bg-surface-3'
 
 export default async function LibraryPage({
   searchParams,
@@ -39,11 +53,11 @@ export default async function LibraryPage({
     <div>
       <PageHeader
         title="Library"
-        subtitle="Every photo in one place — job shots and standalone uploads"
+        subtitle="Every photo in one place: job shots and standalone uploads"
       />
       <ErrorBanner message={params.error} />
 
-      <Card className="mb-4">
+      <Card title="Add photos">
         {durableStorageConfigured() ? (
           <MediaUploader />
         ) : (
@@ -51,50 +65,68 @@ export default async function LibraryPage({
             method="post"
             action="/api/library/upload"
             encType="multipart/form-data"
-            className="flex flex-wrap items-center gap-2"
+            className="grid grid-cols-1 gap-3 sm:grid-cols-[9rem_minmax(0,1fr)_auto] sm:items-end"
           >
-            <select name="kind" className={`${selectClass} w-28`} defaultValue="OTHER">
-              <option value="BEFORE">Before</option>
-              <option value="AFTER">After</option>
-              <option value="OTHER">Other</option>
-            </select>
-            <input
-              type="file"
-              name="files"
-              accept="image/*"
-              multiple
-              required
-              className="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-200 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-300"
-            />
+            <Field label="Photo kind">
+              <select name="kind" className={selectClass} defaultValue="OTHER">
+                <option value="BEFORE">Before</option>
+                <option value="AFTER">After</option>
+                <option value="OTHER">Other</option>
+              </select>
+            </Field>
+            <Field label="Photos">
+              <input
+                type="file"
+                name="files"
+                accept="image/*"
+                multiple
+                required
+                className={fileInputClass}
+              />
+            </Field>
             <button type="submit" className={btnSecondary}>
+              <UploadSimpleIcon aria-hidden />
               Upload
             </button>
-            <span className="text-xs text-slate-400">
+            <p className="text-xs text-ink-muted sm:col-span-3">
               Tip: photos added on a job page land here too, already labeled.
-            </span>
+            </p>
           </form>
         )}
       </Card>
 
-      <div className="mb-4 flex gap-1">
-        {KINDS.map((option) => (
-          <Link
-            key={option}
-            href={option === 'ALL' ? '/library' : `/library?kind=${option}`}
-            className={clsx(
-              'rounded-lg px-3 py-1.5 text-sm font-medium capitalize',
-              kind === option ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-200',
-            )}
-          >
-            {option.toLowerCase()}
-          </Link>
-        ))}
+      <div className="mt-6 mb-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <nav aria-label="Filter by photo kind" className={segmentTrack}>
+          {KINDS.map((option) => (
+            <Link
+              key={option}
+              href={option === 'ALL' ? '/library' : `/library?kind=${option}`}
+              aria-current={kind === option ? 'page' : undefined}
+              className={segmentClass(kind === option)}
+            >
+              {option === 'ALL' ? 'All' : PHOTO_KIND_META[option].label}
+            </Link>
+          ))}
+        </nav>
+        <p className="flex min-w-0 items-start gap-1.5 text-sm text-ink-muted">
+          <LockSimpleIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+          <span className="min-w-0">
+            <span className="font-medium tabular-nums text-ink">
+              {photos.length} photo{photos.length === 1 ? '' : 's'}
+            </span>
+            . Each stays private until an owner approves it for marketing.
+          </span>
+        </p>
       </div>
 
       {photos.length === 0 ? (
-        <EmptyState title="No photos here yet" hint="Upload some, or add them from a job page." />
+        <EmptyState
+          icon={ImagesIcon}
+          title="No photos here yet"
+          hint="Upload some, or add them from a job page."
+        />
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5">
           {photos.map((photo) => (
             <PhotoTile
               key={photo.id}
@@ -103,13 +135,19 @@ export default async function LibraryPage({
               back={back}
               footer={
                 photo.job ? (
-                  <figcaption className="truncate px-2 py-1.5 text-xs text-slate-500">
-                    <Link href={`/jobs/${photo.job.id}`} className="hover:underline">
-                      {photo.job.vehicle.make} {photo.job.vehicle.model} · {photo.job.customer.name}
+                  <figcaption className="truncate px-2 pt-2 text-xs text-ink-muted">
+                    <Link
+                      href={`/jobs/${photo.job.id}`}
+                      className="transition-colors hover:text-ink hover:underline"
+                    >
+                      <span className="font-medium text-ink">
+                        {photo.job.vehicle.make} {photo.job.vehicle.model}
+                      </span>{' '}
+                      · {photo.job.customer.name}
                     </Link>
                   </figcaption>
                 ) : (
-                  <figcaption className="truncate px-2 py-1.5 text-xs text-slate-400">
+                  <figcaption className="truncate px-2 pt-2 text-xs text-ink-faint">
                     {photo.originalName || 'Standalone upload'}
                   </figcaption>
                 )

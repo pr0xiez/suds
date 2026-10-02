@@ -33,7 +33,7 @@ export default async function MarketingPage({
     }),
   ])
   return (
-    <div className="space-y-6">
+    <div>
       <PageHeader
         title="Your Suds marketing assistant"
         subtitle="Turn completed details and available times into marketing that brings customers to your booking page."

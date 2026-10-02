@@ -1,5 +1,6 @@
+import { InfoIcon } from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
-import { btnSecondary, PageHeader } from '@/components/ui'
+import { Callout, linkClass, PageHeader } from '@/components/ui'
 import { VideoEditor } from '@/components/VideoEditor'
 import { requireOwner } from '@/lib/auth/session'
 import { prisma } from '@/lib/db/client'
@@ -17,22 +18,25 @@ export default async function ShortsPage() {
     take: 100,
   })
   return (
-    <div className="space-y-6">
+    <div>
       <PageHeader
         title="Edit a short with AI"
         subtitle="Upload a clip, choose a style, review it before posting."
+        back={{ href: '/social', label: 'Content calendar' }}
       />
-      <Link href="/social" className={btnSecondary}>
-        ← Social calendar
-      </Link>
       {demoEnabled() && (
-        <div className="rounded-xl bg-emerald-50 p-4 text-sm text-emerald-900">
-          Live video editing needs connected providers and private cloud storage. Try the{' '}
-          <Link href="/demo/workflow#owner/shorts" className="font-semibold underline">
+        <Callout
+          tone="info"
+          icon={InfoIcon}
+          className="mb-6"
+          title="Live video editing needs connected providers and private cloud storage."
+        >
+          Try the{' '}
+          <Link href="/demo/workflow#owner/shorts" className={linkClass}>
             interactive photo and video editing preview
           </Link>{' '}
           to choose sources, review a sample storyboard, and save a demo draft.
-        </div>
+        </Callout>
       )}
       <VideoEditor
         configured={videoEditingConfigured() && durableStorageConfigured()}

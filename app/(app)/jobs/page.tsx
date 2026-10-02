@@ -1,3 +1,9 @@
+import {
+  ClipboardTextIcon,
+  FunnelSimpleIcon,
+  MagnifyingGlassIcon,
+  PlusIcon,
+} from '@phosphor-icons/react/ssr'
 import clsx from 'clsx'
 import Link from 'next/link'
 import {
@@ -6,9 +12,14 @@ import {
   Card,
   EmptyState,
   inputClass,
+  JOB_STATUS_META,
   JobStatusBadge,
   PageHeader,
+  segmentClass,
+  segmentTrack,
   selectClass,
+  tdClass,
+  thClass,
 } from '@/components/ui'
 import { requireUser } from '@/lib/auth/session'
 import { dayBoundsUtc, formatDateTime, todayWall } from '@/lib/dates'
@@ -31,6 +42,16 @@ function query(params: { when: WhenFilter; status: string; q: string }): string 
   if (params.q) search.set('q', params.q)
   const s = search.toString()
   return s ? `?${s}` : ''
+}
+
+/** Paid, or what is missing in words: completed work awaiting payment stands out. */
+function PaidCell({ paid, completed }: { paid: boolean; completed: boolean }) {
+  if (paid) return <span className="text-xs font-medium text-ok">Paid</span>
+  return (
+    <span className={clsx('text-xs', completed ? 'font-medium text-warn' : 'text-ink-faint')}>
+      Unpaid
+    </span>
+  )
 }
 
 export default async function JobsPage({
@@ -75,102 +96,167 @@ export default async function JobsPage({
         title="Jobs"
         actions={
           <Link href="/jobs/new" className={btnPrimary}>
-            + New job
+            <PlusIcon aria-hidden />
+            New job
           </Link>
         }
       />
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex rounded-lg border border-slate-300 bg-white p-0.5">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
+        <nav aria-label="When" className={clsx(segmentTrack, 'self-start')}>
           {WHENS.map((option) => (
             <Link
               key={option}
               href={`/jobs${query({ when: option, status, q })}`}
-              className={clsx(
-                'rounded-md px-3 py-1.5 text-sm font-medium capitalize',
-                when === option ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100',
-              )}
+              aria-current={when === option ? 'page' : undefined}
+              className={clsx(segmentClass(when === option), 'capitalize')}
             >
               {option}
             </Link>
           ))}
-        </div>
-        <form method="get" action="/jobs" className="flex flex-1 flex-wrap items-center gap-2">
+        </nav>
+        <form
+          method="get"
+          action="/jobs"
+          className="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-[11rem_minmax(0,1fr)_auto] lg:max-w-2xl"
+        >
           {when !== 'upcoming' ? <input type="hidden" name="when" value={when} /> : null}
-          <select name="status" defaultValue={status} className={`${selectClass} w-40`}>
+          <select name="status" defaultValue={status} aria-label="Status" className={selectClass}>
             <option value="">Any status</option>
             {STATUSES.map((s) => (
               <option key={s} value={s}>
-                {s.replace('_', ' ').toLowerCase()}
+                {JOB_STATUS_META[s].label}
               </option>
             ))}
           </select>
-          <input
-            name="q"
-            defaultValue={q}
-            placeholder="Search customer, vehicle, plate…"
-            className={`${inputClass} max-w-xs`}
-          />
+          <div className="relative min-w-0">
+            <MagnifyingGlassIcon
+              aria-hidden
+              className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-faint"
+            />
+            <input
+              name="q"
+              defaultValue={q}
+              aria-label="Search jobs"
+              placeholder="Search customer, vehicle, plate…"
+              className={clsx(inputClass, 'pl-9')}
+            />
+          </div>
           <button type="submit" className={btnSecondary}>
+            <FunnelSimpleIcon aria-hidden />
             Filter
           </button>
         </form>
       </div>
 
-      <Card padded={false}>
+      <Card padded={false} className="overflow-hidden">
         {jobs.length === 0 ? (
-          <div className="p-4">
-            <EmptyState title="No jobs match" hint="Try different filters, or book one." />
+          <div className="p-4 sm:p-5">
+            <EmptyState
+              icon={ClipboardTextIcon}
+              title="No jobs match"
+              hint="Try different filters, or book one."
+              action={
+                <Link href="/jobs/new" className={btnSecondary}>
+                  <PlusIcon aria-hidden />
+                  New job
+                </Link>
+              }
+            />
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="px-4 py-2.5">When</th>
-                  <th className="px-4 py-2.5">Customer</th>
-                  <th className="px-4 py-2.5">Vehicle</th>
-                  <th className="px-4 py-2.5">Services</th>
-                  <th className="px-4 py-2.5 text-right">Total</th>
-                  <th className="px-4 py-2.5">Status</th>
-                  <th className="px-4 py-2.5">Paid</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {jobs.map((job) => (
-                  <tr key={job.id} className="relative hover:bg-slate-50">
-                    <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">
-                      <Link href={`/jobs/${job.id}`} className="after:absolute after:inset-0">
+          <>
+            {/* Phones: one tappable row per job */}
+            <ul className="divide-y divide-line sm:hidden">
+              {jobs.map((job) => (
+                <li key={job.id}>
+                  <Link
+                    href={`/jobs/${job.id}`}
+                    className="flex items-start gap-3 px-4 py-3.5 transition-colors hover:bg-surface-2"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium tabular-nums text-ink-muted">
                         {formatDateTime(job.scheduledAt, tz)}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-2.5 font-medium text-slate-900">{job.customer.name}</td>
-                    <td className="px-4 py-2.5 text-slate-600">
-                      {job.vehicle.year ? `${job.vehicle.year} ` : ''}
-                      {job.vehicle.make} {job.vehicle.model}
-                    </td>
-                    <td className="max-w-52 truncate px-4 py-2.5 text-slate-600">
-                      {job.items[0]?.name ?? '—'}
-                      {job.items.length > 1 ? ` +${job.items.length - 1}` : ''}
-                    </td>
-                    <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                      {formatCents(jobTotalCents(job))}
-                    </td>
-                    <td className="px-4 py-2.5">
+                      </span>
+                      <span className="mt-1 block truncate text-sm font-medium text-ink">
+                        {job.customer.name}
+                        <span className="font-normal text-ink-muted">
+                          {' '}
+                          {job.vehicle.make} {job.vehicle.model}
+                        </span>
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-ink-muted">
+                        {job.items[0]?.name ?? 'No services'}
+                        {job.items.length > 1 ? ` +${job.items.length - 1}` : ''}
+                      </span>
+                    </span>
+                    <span className="flex shrink-0 flex-col items-end gap-1.5">
+                      <span className="text-sm font-semibold tabular-nums text-ink">
+                        {formatCents(jobTotalCents(job))}
+                      </span>
                       <JobStatusBadge status={job.status} />
-                    </td>
-                    <td className="px-4 py-2.5">
-                      {job.paidAt ? (
-                        <span className="text-xs font-semibold text-emerald-700">Paid</span>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
-                      )}
-                    </td>
+                      {job.paidAt || job.status === 'COMPLETED' ? (
+                        <PaidCell
+                          paid={Boolean(job.paidAt)}
+                          completed={job.status === 'COMPLETED'}
+                        />
+                      ) : null}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+
+            <div className="hidden overflow-x-auto sm:block">
+              <table className="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr className="border-b border-line">
+                    <th className={thClass}>When</th>
+                    <th className={thClass}>Customer</th>
+                    <th className={thClass}>Vehicle</th>
+                    <th className={thClass}>Services</th>
+                    <th className={clsx(thClass, 'text-right')}>Total</th>
+                    <th className={thClass}>Status</th>
+                    <th className={thClass}>Paid</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {jobs.map((job) => (
+                    <tr key={job.id} className="relative transition-colors hover:bg-surface-2">
+                      <td className={clsx(tdClass, 'whitespace-nowrap tabular-nums text-ink')}>
+                        <Link href={`/jobs/${job.id}`} className="after:absolute after:inset-0">
+                          {formatDateTime(job.scheduledAt, tz)}
+                        </Link>
+                      </td>
+                      <td className={clsx(tdClass, 'font-medium text-ink')}>{job.customer.name}</td>
+                      <td className={clsx(tdClass, 'text-ink-muted')}>
+                        {job.vehicle.year ? `${job.vehicle.year} ` : ''}
+                        {job.vehicle.make} {job.vehicle.model}
+                      </td>
+                      <td className={clsx(tdClass, 'max-w-52 truncate text-ink-muted')}>
+                        {job.items[0]?.name ?? 'No services'}
+                        {job.items.length > 1 ? ` +${job.items.length - 1}` : ''}
+                      </td>
+                      <td
+                        className={clsx(tdClass, 'text-right font-semibold tabular-nums text-ink')}
+                      >
+                        {formatCents(jobTotalCents(job))}
+                      </td>
+                      <td className={tdClass}>
+                        <JobStatusBadge status={job.status} />
+                      </td>
+                      <td className={tdClass}>
+                        <PaidCell
+                          paid={Boolean(job.paidAt)}
+                          completed={job.status === 'COMPLETED'}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
     </div>

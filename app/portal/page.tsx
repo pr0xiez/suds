@@ -1,9 +1,31 @@
+import { ArrowRightIcon, CalendarBlankIcon, CalendarPlusIcon } from '@phosphor-icons/react/ssr'
+import clsx from 'clsx'
 import Link from 'next/link'
+import {
+  Badge,
+  btnSecondary,
+  EmptyState,
+  JobStatusBadge,
+  linkClass,
+  PageHeader,
+  type Tone,
+} from '@/components/ui'
 import { requirePortalUser } from '@/lib/bookingCustomer'
-import { formatDateTime } from '@/lib/dates'
+import { formatDate, formatTime } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
 import { formatCents } from '@/lib/money'
 import { bookingServices } from '@/lib/ops/bookings'
+
+/** Same states as before, now labelled in sentence case with a status tone. */
+function bookingBadge(status: string, jobStatus: string | undefined): [string, Tone] {
+  if (jobStatus === 'COMPLETED') return ['Completed', 'ok']
+  if (status === 'PENDING') return ['Awaiting approval', 'warn']
+  const label = status.toLowerCase()
+  const text = `${label.charAt(0).toUpperCase()}${label.slice(1)}`
+  if (status === 'CONFIRMED') return [text, 'info']
+  if (status === 'DECLINED') return [text, 'danger']
+  return [text, 'neutral']
+}
 
 export default async function PortalPage() {
   const user = await requirePortalUser()
@@ -42,102 +64,116 @@ export default async function PortalPage() {
     }),
   ])
   return (
-    <div>
-      <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">
-        Your detailing, organized
-      </p>
-      <h1 className="mt-2 text-3xl font-bold">My appointments</h1>
-      <p className="mt-2 text-sm text-slate-600">
-        See what’s booked, request changes and find your invoices.
-      </p>
-      {customers.length ? (
-        <div className="mt-5 flex flex-wrap gap-2">
-          {customers.map((customer) => (
-            <Link
-              className="rounded-xl bg-emerald-900 px-4 py-3 text-sm font-semibold text-white"
-              key={customer.id}
-              href={`/b/${customer.business.slug}`}
-            >
-              Book {customer.business.name} again →
-            </Link>
-          ))}
-        </div>
-      ) : null}
+    <div data-portal-section="appointments">
+      <PageHeader
+        title="My appointments"
+        subtitle="See what’s booked, request changes and find your invoices."
+        actions={
+          customers.length
+            ? customers.map((customer) => (
+                <Link
+                  className={clsx(btnSecondary, 'max-w-full whitespace-normal! text-left')}
+                  key={customer.id}
+                  href={`/b/${customer.business.slug}`}
+                >
+                  <CalendarPlusIcon aria-hidden />
+                  Book {customer.business.name} again
+                </Link>
+              ))
+            : undefined
+        }
+      />
       {!bookings.length && !otherJobs.length ? (
-        <section className="mt-6 rounded-2xl border border-dashed border-emerald-900/20 bg-white p-8">
-          <h2 className="font-semibold">Your first clean starts here.</h2>
-          <p className="mt-2 max-w-lg text-sm text-slate-500">
-            Open your detailer’s booking link to choose a service and time. If you already have an
-            appointment, ask the detailer for a customer invitation to securely connect it to your
-            account.
-          </p>
-        </section>
+        <EmptyState
+          icon={CalendarBlankIcon}
+          title="Your first clean starts here."
+          hint="Open your detailer’s booking link to choose a service and time. If you already have an appointment, ask the detailer for a customer invitation to securely connect it to your account."
+        />
       ) : null}
-      <div className="mt-6 grid gap-4 sm:grid-cols-2">
-        {bookings.map((booking) => (
-          <Link
-            key={booking.id}
-            href={`/portal/appointments/${booking.id}`}
-            className="rounded-2xl border border-emerald-900/10 bg-white p-5 transition hover:border-emerald-700"
-          >
-            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold">
-              {booking.job?.status === 'COMPLETED'
-                ? 'Completed'
-                : booking.status === 'PENDING'
-                  ? 'Awaiting approval'
-                  : booking.status.toLowerCase()}
-            </span>
-            <h2 className="mt-4 text-lg font-semibold">{booking.business.name}</h2>
-            <p className="mt-1 text-sm">
-              {formatDateTime(booking.scheduledAt, booking.business.settings?.timezone ?? 'UTC')}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              {bookingServices(booking.serviceSnapshots)
-                .map((service) => service.name)
-                .join(' + ')}{' '}
-              · {booking.vehicle.make} {booking.vehicle.model}
-            </p>
-            <p className="mt-4 text-sm font-semibold">
-              {formatCents(booking.priceCents)}{' '}
-              <span className="float-right">View appointment →</span>
-            </p>
-          </Link>
-        ))}
-      </div>
+      {bookings.length ? (
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {bookings.map((booking) => {
+            const tz = booking.business.settings?.timezone ?? 'UTC'
+            const [label, tone] = bookingBadge(booking.status, booking.job?.status)
+            return (
+              <li key={booking.id} className="min-w-0">
+                <Link
+                  href={`/portal/appointments/${booking.id}`}
+                  className="group flex h-full flex-col rounded-panel border border-line bg-surface p-5 shadow-panel transition-colors hover:border-line-strong"
+                >
+                  <span className="flex items-start justify-between gap-3">
+                    <span className="min-w-0">
+                      <span className="block text-lg font-semibold leading-snug text-ink">
+                        {formatDate(booking.scheduledAt, tz)}
+                      </span>
+                      <span className="mt-0.5 block text-sm font-medium tabular-nums text-ink-muted">
+                        {formatTime(booking.scheduledAt, tz)}
+                      </span>
+                    </span>
+                    <Badge tone={tone}>{label}</Badge>
+                  </span>
+                  <span className="mt-4 block font-semibold text-ink">{booking.business.name}</span>
+                  <span className="mt-1 mb-4 block text-sm text-ink-muted">
+                    {bookingServices(booking.serviceSnapshots)
+                      .map((service) => service.name)
+                      .join(' + ')}{' '}
+                    · {booking.vehicle.make} {booking.vehicle.model}
+                  </span>
+                  <span className="mt-auto flex items-center justify-between gap-3 border-t border-line pt-4 text-sm">
+                    <span className="font-semibold tabular-nums text-ink">
+                      {formatCents(booking.priceCents)}
+                    </span>
+                    <span className="inline-flex items-center gap-1 font-medium text-accent-ink group-hover:underline">
+                      View appointment
+                      <ArrowRightIcon aria-hidden className="size-3.5" />
+                    </span>
+                  </span>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
       {otherJobs.length ? (
-        <section className="mt-8">
-          <h2 className="mb-4 text-lg font-semibold">Appointments arranged with your detailer</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
+        <section className="mt-10">
+          <h2 className="text-base font-semibold text-ink">
+            Appointments arranged with your detailer
+          </h2>
+          <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             {otherJobs.map((job) => (
-              <article
+              <li
                 key={job.id}
-                className="rounded-2xl border border-emerald-900/10 bg-white p-5"
+                className="flex min-w-0 flex-col rounded-panel border border-line bg-surface p-5 shadow-panel"
               >
-                <p className="text-xs font-semibold uppercase text-emerald-700">
-                  {job.status.replaceAll('_', ' ')}
-                </p>
-                <h3 className="mt-2 font-semibold">{job.business.name}</h3>
-                <p className="mt-1 text-sm">
-                  {formatDateTime(job.scheduledAt, job.business.settings?.timezone ?? 'UTC')}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
+                <span className="flex items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block text-lg font-semibold leading-snug text-ink">
+                      {formatDate(job.scheduledAt, job.business.settings?.timezone ?? 'UTC')}
+                    </span>
+                    <span className="mt-0.5 block text-sm font-medium tabular-nums text-ink-muted">
+                      {formatTime(job.scheduledAt, job.business.settings?.timezone ?? 'UTC')}
+                    </span>
+                  </span>
+                  <JobStatusBadge status={job.status} />
+                </span>
+                <h3 className="mt-4 font-semibold text-ink">{job.business.name}</h3>
+                <p className="mt-1 mb-4 text-sm text-ink-muted">
                   {job.vehicle.make} {job.vehicle.model}
                 </p>
-                {job.invoiceNumber ? (
-                  <Link
-                    className="mt-4 inline-block text-sm font-semibold underline"
-                    href={`/portal/invoices/${job.id}`}
-                  >
-                    View invoice #{job.invoiceNumber}
-                  </Link>
-                ) : (
-                  <p className="mt-4 text-xs text-slate-500">
-                    Contact the detailer to change this appointment.
-                  </p>
-                )}
-              </article>
+                <div className="mt-auto border-t border-line pt-4 text-sm">
+                  {job.invoiceNumber ? (
+                    <Link className={linkClass} href={`/portal/invoices/${job.id}`}>
+                      View invoice #{job.invoiceNumber}
+                    </Link>
+                  ) : (
+                    <p className="text-ink-muted">
+                      Contact the detailer to change this appointment.
+                    </p>
+                  )}
+                </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </section>
       ) : null}
     </div>

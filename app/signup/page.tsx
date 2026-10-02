@@ -1,7 +1,8 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 import { AccountFrame } from '@/components/AccountFrame'
-import { btnPrimary, Field, inputClass } from '@/components/ui'
+import { ErrorBanner } from '@/components/banners'
+import { btnPrimary, Field, inputClass, linkClass } from '@/components/ui'
 import { getSessionUser } from '@/lib/auth/session'
 import { safeAuthNext } from '@/lib/business'
 
@@ -19,16 +20,18 @@ export default async function SignupPage({
   return (
     <AccountFrame
       title={customer ? 'Create your customer account' : 'Start your detailing business'}
+      subtitle="We will email you a verification link before you can use your account."
     >
-      {query.error ? (
-        <p role="alert" className="text-sm text-rose-700">
-          We could not create your account. Check your details, use a password with 12–128
-          characters, or sign in if you already have an account.
-        </p>
-      ) : null}
-      <form action="/api/auth/signup" method="post" className="space-y-4">
+      <form action="/api/auth/signup" method="post" className="space-y-5">
         <input type="hidden" name="kind" value={customer ? 'CUSTOMER' : 'OWNER'} />
         <input type="hidden" name="next" value={next} />
+        <ErrorBanner
+          message={
+            query.error
+              ? 'We could not create your account. Check your details, use a password with 12 to 128 characters, or sign in if you already have an account.'
+              : null
+          }
+        />
         <Field label="Your name">
           <input name="name" required maxLength={120} autoComplete="name" className={inputClass} />
         </Field>
@@ -53,7 +56,7 @@ export default async function SignupPage({
             className={inputClass}
           />
         </Field>
-        <Field label="Password">
+        <Field label="Password" hint="Use at least 12 characters.">
           <input
             name="password"
             type="password"
@@ -63,7 +66,6 @@ export default async function SignupPage({
             autoComplete="new-password"
             className={inputClass}
           />
-          <p className="mt-1 text-xs text-slate-500">Use at least 12 characters.</p>
         </Field>
         {!customer && process.env.SIGNUP_CODE ? (
           <Field label="Pilot invitation code">
@@ -74,28 +76,21 @@ export default async function SignupPage({
           Create account
         </button>
       </form>
-      <p className="text-sm text-slate-600">
-        Already have an account?{' '}
-        <Link
-          className="text-emerald-700 underline"
-          href={`/login?next=${encodeURIComponent(next)}`}
-        >
-          Sign in
-        </Link>
-      </p>
-      <p className="text-sm text-slate-600">
-        <Link
-          className="text-emerald-700 underline"
-          href={customer ? '/signup' : '/signup?kind=CUSTOMER'}
-        >
-          {customer
-            ? 'Starting a detailing business? Create an owner account'
-            : 'Booking a detail? Create a customer account'}
-        </Link>
-      </p>
-      <p className="text-xs text-slate-500">
-        We will email you a verification link before you can use your account.
-      </p>
+      <div className="space-y-2 border-t border-line pt-5 text-sm text-ink-muted">
+        <p>
+          Already have an account?{' '}
+          <Link className={linkClass} href={`/login?next=${encodeURIComponent(next)}`}>
+            Sign in
+          </Link>
+        </p>
+        <p>
+          <Link className={linkClass} href={customer ? '/signup' : '/signup?kind=CUSTOMER'}>
+            {customer
+              ? 'Starting a detailing business? Create an owner account'
+              : 'Booking a detail? Create a customer account'}
+          </Link>
+        </p>
+      </div>
     </AccountFrame>
   )
 }

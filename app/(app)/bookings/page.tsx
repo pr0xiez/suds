@@ -1,12 +1,50 @@
+import {
+  ArrowRightIcon,
+  CalendarBlankIcon,
+  CheckIcon,
+  GearSixIcon,
+  InfoIcon,
+  TrayIcon,
+  XIcon,
+} from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
 import { decideBookingAction } from '@/app/actions/bookings'
-import { Card, EmptyState, PageHeader } from '@/components/ui'
+import { ErrorBanner } from '@/components/banners'
+import {
+  Badge,
+  btnDanger,
+  btnPrimary,
+  btnSecondary,
+  Card,
+  EmptyState,
+  linkClass,
+  PageHeader,
+  type Tone,
+} from '@/components/ui'
 import { requireUser } from '@/lib/auth/session'
 import { formatDateTime } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
+import type { BookingStatus } from '@/lib/generated/prisma/enums'
 import { formatCents } from '@/lib/money'
 import { bookingServices } from '@/lib/ops/bookings'
 import { getSettings } from '@/lib/ops/settings'
+
+const BOOKING_STATUS: Record<BookingStatus, { label: string; tone: Tone }> = {
+  PENDING: { label: 'Pending', tone: 'warn' },
+  CONFIRMED: { label: 'Confirmed', tone: 'info' },
+  DECLINED: { label: 'Declined', tone: 'neutral' },
+  CANCELED: { label: 'Canceled', tone: 'neutral' },
+}
+
+/** One labeled fact on a request card. */
+function DetailRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-4 px-4 py-2.5 sm:px-5">
+      <dt className="w-16 shrink-0 text-ink-muted">{label}</dt>
+      <dd className="min-w-0 flex-1 wrap-break-word text-ink">{children}</dd>
+    </div>
+  )
+}
 
 export default async function BookingRequestsPage({
   searchParams,
@@ -35,123 +73,160 @@ export default async function BookingRequestsPage({
         title="Customer bookings"
         subtitle="Review requests and see appointments booked through your public page."
         actions={
-          <Link href="/onboarding" className="text-sm font-semibold text-emerald-700">
-            Booking settings →
+          <Link href="/onboarding" className={btnSecondary}>
+            <GearSixIcon aria-hidden />
+            Booking settings
           </Link>
         }
       />
-      {query.error ? (
-        <p role="alert" className="mb-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800">
-          {query.error}
-        </p>
-      ) : null}
-      <Card title={`Requests to review (${pending.length})`}>
-        <p className="mb-4 text-xs text-slate-500">
-          A request does not reserve time. Suds checks the full service and travel buffer again when
-          you accept it.
+      <ErrorBanner message={query.error} />
+
+      <section aria-labelledby="requests-heading">
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 id="requests-heading" className="font-display text-lg font-bold text-ink">
+            Requests to review
+          </h2>
+          <Badge tone={pending.length ? 'warn' : 'neutral'} className="tabular-nums">
+            {pending.length}
+          </Badge>
+        </div>
+        <p className="mt-1 mb-4 flex items-start gap-1.5 text-sm text-ink-muted">
+          <InfoIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-faint" />
+          <span>
+            A request does not reserve time. Suds checks the full service and travel buffer again
+            when you accept it.
+          </span>
         </p>
         {!pending.length ? (
-          <EmptyState
-            title="You’re all caught up"
-            hint="New requests appear here when approval booking is enabled."
-          />
+          <Card>
+            <EmptyState
+              icon={TrayIcon}
+              title="You’re all caught up"
+              hint="New requests appear here when approval booking is enabled."
+            />
+          </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
             {pending.map((booking) => (
-              <article key={booking.id} className="rounded-xl border border-slate-200 p-4">
-                <p className="text-xs font-semibold uppercase text-emerald-700">
-                  Awaiting approval
-                </p>
-                <h2 className="mt-2 font-semibold">{booking.customer.name}</h2>
-                <p className="mt-1 text-sm">
-                  {formatDateTime(booking.scheduledAt, settings.timezone)}
-                </p>
-                <p className="mt-1 text-sm text-slate-500">
-                  {bookingServices(booking.serviceSnapshots)
-                    .map((service) => service.name)
-                    .join(' + ')}{' '}
-                  · {formatCents(booking.priceCents)}
-                </p>
-                <p className="mt-2 text-sm">
-                  {booking.vehicle.make} {booking.vehicle.model}
-                </p>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">{booking.address}</p>
-                {booking.waterPowerNotes ? (
-                  <p className="mt-2 text-sm text-slate-500">Access: {booking.waterPowerNotes}</p>
-                ) : null}
-                {booking.customerNotes ? (
-                  <p className="mt-2 text-sm text-slate-500">Note: {booking.customerNotes}</p>
-                ) : null}
-                <p className="mt-2 text-sm text-slate-500">
-                  {booking.customer.phone} · {booking.customer.email}
-                </p>
-                {user.businessRole === 'OWNER' ? (
-                  <div className="mt-4 flex gap-2">
-                    <form action={decideBookingAction}>
-                      <input name="id" type="hidden" value={booking.id} />
-                      <button
-                        type="submit"
-                        name="decision"
-                        value="accept"
-                        className="rounded-xl bg-emerald-900 px-4 py-3 text-sm font-semibold text-white"
-                      >
-                        Accept
-                      </button>
-                    </form>
-                    <form action={decideBookingAction}>
-                      <input name="id" type="hidden" value={booking.id} />
-                      <button
-                        type="submit"
-                        name="decision"
-                        value="decline"
-                        className="rounded-xl border border-rose-200 px-4 py-3 text-sm font-semibold text-rose-700"
-                      >
-                        Decline
-                      </button>
-                    </form>
+              <article
+                key={booking.id}
+                aria-label={`Request from ${booking.customer.name}`}
+                className="flex min-w-0 flex-col rounded-panel border border-line bg-surface shadow-panel"
+              >
+                <header className="flex items-start justify-between gap-3 border-b border-line px-4 py-4 sm:px-5">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-semibold text-ink">{booking.customer.name}</h3>
+                    <p className="mt-1 flex items-center gap-1.5 text-sm font-medium tabular-nums text-ink">
+                      <CalendarBlankIcon aria-hidden className="size-4 shrink-0 text-ink-faint" />
+                      {formatDateTime(booking.scheduledAt, settings.timezone)}
+                    </p>
                   </div>
-                ) : (
-                  <p className="mt-4 text-xs text-slate-500">
-                    The business owner can accept or decline.
-                  </p>
-                )}
+                  <Badge tone="warn">Awaiting approval</Badge>
+                </header>
+                <dl className="flex-1 divide-y divide-line py-1 text-sm">
+                  <DetailRow label="Service">
+                    <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <span className="min-w-0">
+                        {bookingServices(booking.serviceSnapshots)
+                          .map((service) => service.name)
+                          .join(' + ')}
+                      </span>
+                      <span className="font-semibold tabular-nums">
+                        {formatCents(booking.priceCents)}
+                      </span>
+                    </span>
+                  </DetailRow>
+                  <DetailRow label="Vehicle">
+                    {booking.vehicle.make} {booking.vehicle.model}
+                  </DetailRow>
+                  <DetailRow label="Address">
+                    <span className="whitespace-pre-wrap">{booking.address}</span>
+                  </DetailRow>
+                  {booking.waterPowerNotes ? (
+                    <DetailRow label="Access">{booking.waterPowerNotes}</DetailRow>
+                  ) : null}
+                  {booking.customerNotes ? (
+                    <DetailRow label="Note">{booking.customerNotes}</DetailRow>
+                  ) : null}
+                  <DetailRow label="Contact">
+                    <span className="block tabular-nums">{booking.customer.phone}</span>
+                    <span className="block text-ink-muted">{booking.customer.email}</span>
+                  </DetailRow>
+                </dl>
+                <footer className="border-t border-line px-4 py-3 sm:px-5">
+                  {user.businessRole === 'OWNER' ? (
+                    <div className="flex gap-2">
+                      <form action={decideBookingAction} className="flex-1 sm:flex-none">
+                        <input name="id" type="hidden" value={booking.id} />
+                        <button
+                          type="submit"
+                          name="decision"
+                          value="accept"
+                          className={`${btnPrimary} w-full`}
+                        >
+                          <CheckIcon aria-hidden />
+                          Accept
+                        </button>
+                      </form>
+                      <form action={decideBookingAction} className="flex-1 sm:flex-none">
+                        <input name="id" type="hidden" value={booking.id} />
+                        <button
+                          type="submit"
+                          name="decision"
+                          value="decline"
+                          className={`${btnDanger} w-full`}
+                        >
+                          <XIcon aria-hidden />
+                          Decline
+                        </button>
+                      </form>
+                    </div>
+                  ) : (
+                    <p className="py-1.5 text-sm text-ink-muted">
+                      The business owner can accept or decline.
+                    </p>
+                  )}
+                </footer>
               </article>
             ))}
           </div>
         )}
-      </Card>
-      <div className="mt-6">
-        <Card title="Other customer bookings">
-          {!recent.length ? (
-            <EmptyState title="No customer bookings yet" />
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {recent.map((booking) => (
-                <div
-                  key={booking.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
-                >
-                  <div>
-                    <p className="font-semibold">{booking.customer.name}</p>
-                    <p className="text-slate-500">
-                      {formatDateTime(booking.scheduledAt, settings.timezone)} ·{' '}
-                      {booking.status.toLowerCase()}
-                    </p>
-                  </div>
+      </section>
+
+      <Card title="Other customer bookings" padded={false} className="mt-10">
+        {!recent.length ? (
+          <div className="p-4 sm:p-5">
+            <EmptyState icon={CalendarBlankIcon} title="No customer bookings yet" />
+          </div>
+        ) : (
+          <ul className="divide-y divide-line">
+            {recent.map((booking) => (
+              <li key={booking.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-ink">{booking.customer.name}</p>
+                  <p className="mt-0.5 text-xs tabular-nums text-ink-muted">
+                    {formatDateTime(booking.scheduledAt, settings.timezone)}
+                  </p>
+                </div>
+                <Badge tone={BOOKING_STATUS[booking.status].tone}>
+                  {BOOKING_STATUS[booking.status].label}
+                </Badge>
+                <span className="flex w-24 shrink-0 justify-end">
                   {booking.jobId ? (
                     <Link
-                      className="font-semibold text-emerald-700"
+                      className={`${linkClass} inline-flex items-center gap-1 text-sm`}
                       href={`/jobs/${booking.jobId}`}
                     >
-                      Open job →
+                      Open job
+                      <ArrowRightIcon aria-hidden className="size-3.5" />
                     </Link>
                   ) : null}
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   )
 }

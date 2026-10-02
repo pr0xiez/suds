@@ -49,6 +49,6 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   revalidatePath('/', 'layout')
   if (firstError && added === 0) return back(`?error=${encodeURIComponent(firstError)}`)
-  if (firstError) return back(`?error=${encodeURIComponent(`Some uploads failed — ${firstError}`)}`)
+  if (firstError) return back(`?error=${encodeURIComponent(`Some uploads failed: ${firstError}`)}`)
   return back()
 }

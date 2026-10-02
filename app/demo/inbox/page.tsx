@@ -1,5 +1,6 @@
-import Link from 'next/link'
+import { ArrowSquareOutIcon, EnvelopeSimpleIcon, FlaskIcon } from '@phosphor-icons/react/ssr'
 import { notFound } from 'next/navigation'
+import { Badge, btnPrimary, btnSmall, EmptyState, PageHeader } from '@/components/ui'
 import { prisma } from '@/lib/db/client'
 import { demoEnabled } from '@/lib/demo'
 import { publicAppUrl } from '@/lib/notifications'
@@ -15,56 +16,77 @@ export default async function DemoInbox() {
   })
   const origin = new URL(publicAppUrl()).origin
   return (
-    <main className="mx-auto max-w-4xl px-5 py-10 pb-28">
-      <Link href="/demo" className="text-sm font-semibold text-emerald-700">
-        ← Demo tour
-      </Link>
-      <h1 className="mt-6 text-3xl font-bold">Demo inbox</h1>
-      <p className="mt-3 text-sm text-slate-600">
-        Queued email from fictional demo accounts. Nothing is sent. Refresh after booking, signup,
-        recovery, or an invitation to see its message.
-      </p>
-      <div className="mt-6 space-y-4">
-        {!messages.length && <p>No messages yet. Create an account or book an appointment.</p>}
-        {messages.map((message) => {
-          const links = [...new Set(message.text.match(/https?:\/\/[^\s]+/g) ?? [])].flatMap(
-            (value) => {
-              try {
-                const url = new URL(value)
-                return url.origin === origin ? [url] : []
-              } catch {
-                return []
-              }
-            },
-          )
-          return (
-            <article key={message.id} className="rounded-2xl border border-slate-200 bg-white p-5">
-              <p className="text-xs text-slate-500">
-                To: {message.to} · {message.status.toLowerCase()} ·{' '}
-                {message.createdAt.toLocaleString('en-US', { timeZone: 'America/New_York' })}
-              </p>
-              <h2 className="mt-2 font-bold">{message.subject}</h2>
-              <pre className="mt-4 whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-slate-600">
-                {message.text}
-              </pre>
-              {links.map((url) => (
-                <a
-                  key={url.href}
-                  href={`${url.pathname}${url.search}`}
-                  className="mt-4 inline-block rounded-lg bg-emerald-900 px-4 py-2 text-sm font-semibold text-white"
-                >
-                  Open{' '}
-                  {url.pathname.includes('reset')
-                    ? 'password reset'
-                    : url.pathname.includes('verify')
-                      ? 'confirmation'
-                      : 'local demo'}{' '}
-                  link →
-                </a>
-              ))}
-            </article>
-          )
-        })}
+    <main className="min-h-dvh bg-canvas text-ink">
+      <div className="mx-auto max-w-4xl px-4 py-8 pb-32 sm:px-6 md:py-10">
+        <PageHeader
+          back={{ href: '/demo', label: 'Demo tour' }}
+          title="Demo inbox"
+          subtitle="Queued email from fictional demo accounts. Nothing is sent. Refresh after booking, signup, recovery, or an invitation to see its message."
+          actions={
+            <Badge tone="accent">
+              <FlaskIcon aria-hidden className="size-3.5" />
+              Demo only
+            </Badge>
+          }
+        />
+        <div className="space-y-4">
+          {!messages.length && (
+            <EmptyState
+              icon={EnvelopeSimpleIcon}
+              title="No messages yet. Create an account or book an appointment."
+            />
+          )}
+          {messages.map((message) => {
+            const links = [...new Set(message.text.match(/https?:\/\/[^\s]+/g) ?? [])].flatMap(
+              (value) => {
+                try {
+                  const url = new URL(value)
+                  return url.origin === origin ? [url] : []
+                } catch {
+                  return []
+                }
+              },
+            )
+            return (
+              <article
+                key={message.id}
+                className="min-w-0 rounded-panel border border-line bg-surface p-5 shadow-panel"
+              >
+                <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-ink-muted">
+                  <span className="min-w-0 break-all">To: {message.to}</span>
+                  <Badge>{message.status.toLowerCase()}</Badge>
+                  <span className="tabular-nums">
+                    {message.createdAt.toLocaleString('en-US', { timeZone: 'America/New_York' })}
+                  </span>
+                </p>
+                <h2 className="mt-2 font-semibold text-ink">{message.subject}</h2>
+                <pre className="mt-4 whitespace-pre-wrap break-words font-sans text-sm leading-relaxed text-ink-muted">
+                  {message.text}
+                </pre>
+                {links.length ? (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {links.map((url) => (
+                      <a
+                        key={url.href}
+                        href={`${url.pathname}${url.search}`}
+                        className={`${btnPrimary} ${btnSmall}`}
+                      >
+                        <ArrowSquareOutIcon aria-hidden />
+                        Open{' '}
+                        {url.pathname.includes('reset')
+                          ? 'password reset'
+                          : url.pathname.includes('verify')
+                            ? 'confirmation'
+                            : 'local demo'}{' '}
+                        link
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
+            )
+          })}
+        </div>
       </div>
     </main>
   )

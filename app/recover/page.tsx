@@ -1,6 +1,8 @@
+import { ArrowLeftIcon } from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
 import { AccountFrame } from '@/components/AccountFrame'
-import { btnPrimary, Field, inputClass } from '@/components/ui'
+import { SuccessBanner } from '@/components/banners'
+import { btnPrimary, Field, inputClass, linkClass } from '@/components/ui'
 
 export default async function RecoverPage({
   searchParams,
@@ -9,16 +11,14 @@ export default async function RecoverPage({
 }) {
   const { sent } = await searchParams
   return (
-    <AccountFrame title="Recover your account">
+    <AccountFrame
+      title="Recover your account"
+      subtitle={sent ? undefined : 'We will email you a link that expires in one hour.'}
+    >
       {sent ? (
-        <p role="status" className="text-sm text-slate-600">
-          If that email belongs to an active account, we have queued a password recovery link. Check
-          your inbox.
-        </p>
-      ) : (
-        <p className="text-sm text-slate-600">We will email you a link that expires in one hour.</p>
-      )}
-      <form method="post" action="/api/auth/recover" className="space-y-4">
+        <SuccessBanner message="If that email belongs to an active account, we have queued a password recovery link. Check your inbox." />
+      ) : null}
+      <form method="post" action="/api/auth/recover" className="space-y-5">
         <Field label="Email">
           <input
             type="email"
@@ -27,15 +27,19 @@ export default async function RecoverPage({
             maxLength={254}
             autoComplete="email"
             className={inputClass}
+            placeholder="you@example.com"
           />
         </Field>
-        <button type="submit" className={btnPrimary}>
+        <button type="submit" className={`${btnPrimary} w-full`}>
           Send recovery link
         </button>
       </form>
-      <Link className="text-sm text-emerald-700 underline" href="/login">
-        Back to sign in
-      </Link>
+      <p className="border-t border-line pt-5 text-sm">
+        <Link className={`${linkClass} inline-flex items-center gap-1.5`} href="/login">
+          <ArrowLeftIcon aria-hidden className="size-4" />
+          Back to sign in
+        </Link>
+      </p>
     </AccountFrame>
   )
 }

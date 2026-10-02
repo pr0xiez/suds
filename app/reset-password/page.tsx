@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { AccountFrame } from '@/components/AccountFrame'
-import { btnPrimary, Field, inputClass } from '@/components/ui'
+import { ErrorBanner } from '@/components/banners'
+import { btnPrimary, Field, inputClass, linkClass } from '@/components/ui'
 
 export default async function ResetPasswordPage({
   searchParams,
@@ -12,15 +13,12 @@ export default async function ResetPasswordPage({
   return (
     <AccountFrame title="Choose a new password">
       {query.error ? (
-        <p role="alert" className="text-sm text-rose-700">
-          This link is invalid or expired, or the password is too short. Request a new recovery
-          link.
-        </p>
+        <ErrorBanner message="This link is invalid or expired, or the password is too short. Request a new recovery link." />
       ) : null}
       {token ? (
-        <form method="post" action="/api/auth/reset-password" className="space-y-4">
+        <form method="post" action="/api/auth/reset-password" className="space-y-5">
           <input type="hidden" name="token" value={token} />
-          <Field label="New password">
+          <Field label="New password" hint="Use at least 12 characters.">
             <input
               className={inputClass}
               type="password"
@@ -31,15 +29,19 @@ export default async function ResetPasswordPage({
               required
             />
           </Field>
-          <button type="submit" className={btnPrimary}>
-            Reset password
-          </button>
-          <p className="text-xs text-slate-500">This signs out your other sessions.</p>
+          <div>
+            <button type="submit" className={`${btnPrimary} w-full`}>
+              Reset password
+            </button>
+            <p className="mt-2 text-xs text-ink-muted">This signs out your other sessions.</p>
+          </div>
         </form>
       ) : null}
-      <Link className="text-sm text-emerald-700 underline" href="/recover">
-        Request a recovery link
-      </Link>
+      <p className="border-t border-line pt-5 text-sm">
+        <Link className={linkClass} href="/recover">
+          Request a recovery link
+        </Link>
+      </p>
     </AccountFrame>
   )
 }

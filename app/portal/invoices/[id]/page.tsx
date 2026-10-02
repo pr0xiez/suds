@@ -1,6 +1,8 @@
+import { ArrowLeftIcon } from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { PrintButton } from '@/components/PrintButton'
+import { Badge, btnSecondary } from '@/components/ui'
 import { requirePortalUser } from '@/lib/bookingCustomer'
 import { formatDateTime } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
@@ -28,62 +30,74 @@ export default async function PortalInvoicePage({ params }: { params: Promise<{ 
   })
   if (!job) notFound()
   return (
-    <div>
-      <div className="no-print mb-5 flex items-center justify-between">
-        <Link href="/portal" className="text-sm font-semibold">
-          ← Appointments
+    <div data-portal-section="appointments">
+      <div className="no-print mx-auto mb-6 flex max-w-2xl items-center justify-between gap-3">
+        <Link
+          href="/portal"
+          className="inline-flex items-center gap-1.5 text-sm text-ink-muted transition-colors hover:text-ink"
+        >
+          <ArrowLeftIcon aria-hidden className="size-4" />
+          Appointments
         </Link>
-        <PrintButton />
+        <PrintButton className={btnSecondary} />
       </div>
-      <article className="mx-auto max-w-2xl rounded-2xl border border-emerald-900/10 bg-white p-6 sm:p-10">
-        <header className="flex flex-wrap justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-bold">{job.business.name}</h1>
-            <p className="mt-2 text-sm text-slate-500">{job.business.settings?.phone}</p>
-            <p className="text-sm text-slate-500">{job.business.settings?.email}</p>
+      <article className="mx-auto max-w-2xl rounded-panel border border-line bg-surface p-6 shadow-panel sm:p-10 print:max-w-none print:rounded-none print:border-0 print:bg-transparent print:p-0 print:shadow-none">
+        <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-4">
+          <div className="min-w-0">
+            <h1 className="font-display text-2xl font-bold leading-tight text-ink">
+              {job.business.name}
+            </h1>
+            <p className="mt-2 text-sm tabular-nums text-ink-muted">
+              {job.business.settings?.phone}
+            </p>
+            <p className="break-all text-sm text-ink-muted">{job.business.settings?.email}</p>
           </div>
-          <div>
-            <h2 className="font-semibold">Invoice #{job.invoiceNumber}</h2>
-            <p className="mt-2 text-sm">{job.paidAt ? 'Paid' : 'Payment due'}</p>
+          <div className="sm:text-right">
+            <h2 className="text-sm font-semibold text-ink">
+              Invoice <span className="font-mono">#{job.invoiceNumber}</span>
+            </h2>
+            <p className="mt-2">
+              <Badge tone={job.paidAt ? 'ok' : 'warn'}>{job.paidAt ? 'Paid' : 'Payment due'}</Badge>
+            </p>
           </div>
         </header>
-        <section className="mt-8 border-y border-emerald-900/10 py-5">
-          <p className="font-semibold">{job.customer.name}</p>
-          <p className="mt-1 text-sm">
+        <section className="mt-8 border-y border-line py-5">
+          <p className="font-semibold text-ink">{job.customer.name}</p>
+          <p className="mt-1 text-sm text-ink">
             {job.vehicle.year} {job.vehicle.make} {job.vehicle.model}
           </p>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm tabular-nums text-ink-muted">
             {formatDateTime(job.scheduledAt, job.business.settings?.timezone ?? 'UTC')}
           </p>
-          <p className="mt-1 text-sm text-slate-500">{job.locationAddress}</p>
+          <p className="mt-1 break-words text-sm text-ink-muted">{job.locationAddress}</p>
         </section>
-        <div className="mt-5 space-y-3">
+        <div className="mt-5 divide-y divide-line">
           {job.items.map((item) => (
-            <div key={item.id} className="flex justify-between gap-4 text-sm">
-              <span>{item.name}</span>
-              <span className="shrink-0">{formatCents(item.priceCents)}</span>
+            <div key={item.id} className="flex justify-between gap-4 py-2.5 text-sm text-ink">
+              <span className="min-w-0">{item.name}</span>
+              <span className="shrink-0 tabular-nums">{formatCents(item.priceCents)}</span>
             </div>
           ))}
         </div>
-        <div className="mt-6 space-y-2 border-t border-emerald-900/10 pt-5">
+        <div className="mt-4 space-y-2 border-t border-line pt-5">
           {job.discountCents > 0 ? (
-            <p className="flex justify-between text-sm">
+            <p className="flex justify-between text-sm text-ink-muted">
               <span>Discount</span>
-              <span>−{formatCents(job.discountCents)}</span>
+              <span className="tabular-nums">−{formatCents(job.discountCents)}</span>
             </p>
           ) : null}
           {job.tipCents > 0 ? (
-            <p className="flex justify-between text-sm">
+            <p className="flex justify-between text-sm text-ink-muted">
               <span>Tip</span>
-              <span>{formatCents(job.tipCents)}</span>
+              <span className="tabular-nums">{formatCents(job.tipCents)}</span>
             </p>
           ) : null}
-          <p className="flex justify-between text-lg font-bold">
+          <p className="flex justify-between text-lg font-bold text-ink">
             <span>Total</span>
-            <span>{formatCents(jobTotalCents(job) + job.tipCents)}</span>
+            <span className="tabular-nums">{formatCents(jobTotalCents(job) + job.tipCents)}</span>
           </p>
         </div>
-        <p className="mt-8 text-xs text-slate-500">
+        <p className="mt-8 text-xs leading-relaxed text-ink-muted">
           Please arrange payment directly with your detailer. Thank you for choosing{' '}
           {job.business.name}.
         </p>

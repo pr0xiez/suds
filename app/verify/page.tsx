@@ -1,6 +1,8 @@
+import { EnvelopeSimpleIcon } from '@phosphor-icons/react/ssr'
 import Link from 'next/link'
 import { AccountFrame } from '@/components/AccountFrame'
-import { btnPrimary, Field, inputClass } from '@/components/ui'
+import { ErrorBanner, SuccessBanner } from '@/components/banners'
+import { btnPrimary, Field, inputClass, linkClass } from '@/components/ui'
 import { tokenHash } from '@/lib/auth/accounts'
 import { safeAuthNext } from '@/lib/business'
 import { prisma } from '@/lib/db/client'
@@ -31,22 +33,26 @@ export default async function VerifyPage({
     ['MEMBERSHIP_INVITE', 'CUSTOMER_LINK'].includes(token.purpose) &&
     !token.user.emailVerifiedAt
   return (
-    <AccountFrame title={valid ? 'Confirm your email' : 'Check your email'}>
+    <AccountFrame
+      title={valid ? 'Confirm your email' : 'Check your email'}
+      subtitle={
+        valid
+          ? 'Confirm to verify your email and accept any invitation included with this link.'
+          : 'Open the verification link sent to your email. Your account becomes available after you confirm it.'
+      }
+    >
       {query.error || (query.token && !valid) ? (
-        <p role="alert" className="text-sm text-rose-700">
-          This link is invalid, expired, or already used. Request another email or recover your
-          account.
-        </p>
+        <ErrorBanner message="This link is invalid, expired, or already used. Request another email or recover your account." />
+      ) : null}
+      {query.sent ? (
+        <SuccessBanner message="If your account needs verification, another email has been queued." />
       ) : null}
       {valid ? (
-        <form method="post" action="/api/auth/verify" className="space-y-4">
+        <form method="post" action="/api/auth/verify" className="space-y-5">
           <input type="hidden" name="token" value={query.token} />
           <input type="hidden" name="next" value={next} />
-          <p className="text-sm text-slate-600">
-            Confirm to verify your email and accept any invitation included with this link.
-          </p>
           {needPassword ? (
-            <Field label="Choose a password">
+            <Field label="Choose a password" hint="Use at least 12 characters.">
               <input
                 className={inputClass}
                 type="password"
@@ -58,38 +64,25 @@ export default async function VerifyPage({
               />
             </Field>
           ) : null}
-          <button className={btnPrimary} type="submit">
+          <button className={`${btnPrimary} w-full`} type="submit">
             Confirm email
           </button>
         </form>
       ) : (
-        <>
-          <p className="text-sm text-slate-600">
-            Open the verification link sent to your email. Your account becomes available after you
-            confirm it.
-          </p>
-          <form action="/api/auth/resend" method="post">
-            <input type="hidden" name="next" value={next} />
-            <button type="submit" className={btnPrimary}>
-              Send another verification email
-            </button>
-          </form>
-        </>
+        <form action="/api/auth/resend" method="post">
+          <input type="hidden" name="next" value={next} />
+          <button type="submit" className={`${btnPrimary} w-full`}>
+            <EnvelopeSimpleIcon aria-hidden />
+            Send another verification email
+          </button>
+        </form>
       )}
-      {query.sent ? (
-        <p role="status" className="text-sm text-slate-600">
-          If your account needs verification, another email has been queued.
-        </p>
-      ) : null}
-      <p className="text-sm">
-        <Link
-          className="text-emerald-700 underline"
-          href={`/login?next=${encodeURIComponent(next)}`}
-        >
+      <p className="border-t border-line pt-5 text-sm text-ink-muted">
+        <Link className={linkClass} href={`/login?next=${encodeURIComponent(next)}`}>
           Sign in
         </Link>{' '}
         ·{' '}
-        <Link className="text-emerald-700 underline" href="/recover">
+        <Link className={linkClass} href="/recover">
           Recover account
         </Link>
       </p>

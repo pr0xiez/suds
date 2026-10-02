@@ -1,5 +1,6 @@
 'use client'
 
+import { CheckIcon } from '@phosphor-icons/react/ssr'
 import { useState } from 'react'
 
 export function CopyButton({
@@ -26,7 +27,14 @@ export function CopyButton({
         }
       }}
     >
-      {copied ? 'Copied ✓' : children}
+      {copied ? (
+        <>
+          <CheckIcon aria-hidden />
+          Copied
+        </>
+      ) : (
+        children
+      )}
     </button>
   )
 }

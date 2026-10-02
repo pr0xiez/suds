@@ -1,5 +1,13 @@
 'use client'
 
+import {
+  CalendarCheckIcon,
+  CheckIcon,
+  FilmSlateIcon,
+  ImageIcon,
+  ImagesIcon,
+  PlusIcon,
+} from '@phosphor-icons/react/ssr'
 import clsx from 'clsx'
 import Link from 'next/link'
 import { useActionState, useState } from 'react'
@@ -8,14 +16,19 @@ import { ErrorBanner } from '@/components/banners'
 import {
   btnPrimary,
   btnSecondary,
-  btnSmall,
   Card,
+  EmptyState,
   Field,
   inputClass,
   labelClass,
+  linkClass,
   PHOTO_KIND_META,
+  PhotoKindBadge,
   PLATFORM_META,
+  segmentClass,
+  segmentTrack,
   selectClass,
+  textareaClass,
 } from '@/components/ui'
 import { CAPTION_MAX, renderCaptionTemplate, withHashtags } from '@/lib/captions'
 
@@ -87,27 +100,30 @@ export function PostComposer({
 
   return (
     <form action={formAction} className="space-y-6">
-      <p className="text-sm text-slate-500">
-        Making a Reel or Short?{' '}
-        <Link href="/social/shorts" className="font-medium text-cyan-700 underline">
-          Edit a video or turn job photos into a short
-        </Link>{' '}
-        before publishing.
+      <p className="flex items-start gap-2 text-sm text-ink-muted">
+        <FilmSlateIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-faint" />
+        <span className="min-w-0">
+          Making a Reel or Short?{' '}
+          <Link href="/social/shorts" className={linkClass}>
+            Edit a video or turn job photos into a short
+          </Link>{' '}
+          before publishing.
+        </span>
       </p>
       <input type="hidden" name="postId" value={initial.postId} />
       <input type="hidden" name="jobId" value={initial.jobId} />
       <input type="hidden" name="photoIds" value={JSON.stringify(photoIds)} />
       <ErrorBanner message={state?.error} />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0 space-y-6">
           <Card title="Caption">
             <div className="space-y-3">
               {templates.length > 0 ? (
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <select
                     aria-label="Caption template"
-                    className={`${selectClass} max-w-56`}
+                    className={clsx(selectClass, 'sm:max-w-64')}
                     value={templateId}
                     onChange={(e) => setTemplateId(e.target.value)}
                   >
@@ -118,138 +134,157 @@ export function PostComposer({
                       </option>
                     ))}
                   </select>
-                  <button
-                    type="button"
-                    onClick={insertTemplate}
-                    disabled={!templateId}
-                    className={`${btnSecondary} ${btnSmall}`}
-                  >
-                    Insert
-                  </button>
-                  {hashtags ? (
+                  <div className="flex gap-2">
                     <button
                       type="button"
-                      onClick={() => setCaption((c) => withHashtags(c, hashtags))}
-                      className={`${btnSecondary} ${btnSmall}`}
+                      onClick={insertTemplate}
+                      disabled={!templateId}
+                      className={btnSecondary}
                     >
-                      + Hashtags
+                      Insert
                     </button>
-                  ) : null}
+                    {hashtags ? (
+                      <button
+                        type="button"
+                        onClick={() => setCaption((c) => withHashtags(c, hashtags))}
+                        className={btnSecondary}
+                      >
+                        <PlusIcon aria-hidden />
+                        Hashtags
+                      </button>
+                    ) : null}
+                  </div>
                 </div>
               ) : null}
               <textarea
                 name="caption"
+                aria-label="Caption"
                 value={caption}
                 onChange={(e) => setCaption(e.target.value)}
                 placeholder="Write the caption…"
-                className={clsx(inputClass, 'min-h-44 leading-relaxed')}
+                className={clsx(textareaClass, 'min-h-44')}
               />
               <p
                 className={clsx(
                   'text-right text-xs tabular-nums',
-                  overLimit ? 'font-semibold text-rose-600' : 'text-slate-400',
+                  overLimit ? 'font-semibold text-danger' : 'text-ink-faint',
                 )}
               >
+                {overLimit ? 'Over the limit: ' : ''}
                 {caption.length.toLocaleString()} / {CAPTION_MAX.toLocaleString()}
               </p>
             </div>
           </Card>
 
-          <Card
-            title={`Photos (${photoIds.length} selected)`}
-            actions={
-              <span className="flex gap-1">
-                {KIND_FILTERS.map((filter) => (
-                  <button
-                    key={filter}
-                    type="button"
-                    onClick={() => setKindFilter(filter)}
-                    className={clsx(
-                      'rounded-md px-2 py-1 text-xs font-medium',
-                      kindFilter === filter
-                        ? 'bg-slate-900 text-white'
-                        : 'text-slate-500 hover:bg-slate-100',
-                    )}
-                  >
-                    {filter === 'ALL' ? 'All' : PHOTO_KIND_META[filter].label}
-                  </button>
-                ))}
-              </span>
-            }
-          >
+          <Card title={`Photos (${photoIds.length} selected)`}>
             {photos.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                No photos in the library yet — add some on a job page or in the Library.
-              </p>
+              <EmptyState
+                icon={ImagesIcon}
+                title="No photos in the library yet"
+                hint="Add some on a job page or in the Library, then approve them for marketing."
+              />
             ) : (
-              <div className="grid max-h-96 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-5 md:grid-cols-6">
-                {visible.map((photo) => {
-                  const index = photoIds.indexOf(photo.id)
-                  return (
-                    <button
-                      key={photo.id}
-                      type="button"
-                      onClick={() => togglePhoto(photo.id)}
-                      title={photo.label}
-                      className={clsx(
-                        'relative overflow-hidden rounded-lg border-2',
-                        index >= 0
-                          ? 'border-cyan-600'
-                          : 'border-transparent hover:border-slate-300',
-                      )}
-                    >
-                      <img
-                        src={`/api/photos/${photo.id}`}
-                        alt={photo.label}
-                        loading="lazy"
-                        className="aspect-square w-full object-cover"
-                      />
-                      {index >= 0 ? (
-                        <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-cyan-600 text-[10px] font-bold text-white">
-                          {index + 1}
+              <>
+                <div className="mb-3">
+                  <div className={segmentTrack} role="group" aria-label="Filter photos by kind">
+                    {KIND_FILTERS.map((filter) => (
+                      <button
+                        key={filter}
+                        type="button"
+                        aria-pressed={kindFilter === filter}
+                        onClick={() => setKindFilter(filter)}
+                        className={segmentClass(kindFilter === filter)}
+                      >
+                        {filter === 'ALL' ? 'All' : PHOTO_KIND_META[filter].label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="-m-1 grid max-h-96 grid-cols-3 gap-2 overflow-y-auto p-1 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6">
+                  {visible.map((photo) => {
+                    const index = photoIds.indexOf(photo.id)
+                    return (
+                      <button
+                        key={photo.id}
+                        type="button"
+                        onClick={() => togglePhoto(photo.id)}
+                        title={photo.label}
+                        aria-pressed={index >= 0}
+                        className={clsx(
+                          'relative overflow-hidden rounded-control bg-surface-2 transition-shadow',
+                          index >= 0
+                            ? 'ring-2 ring-accent-ink'
+                            : 'ring-1 ring-line hover:ring-line-strong',
+                        )}
+                      >
+                        <img
+                          src={`/api/photos/${photo.id}`}
+                          alt={photo.label}
+                          loading="lazy"
+                          className="aspect-square w-full object-cover"
+                        />
+                        {index >= 0 ? (
+                          <span className="absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-accent text-xs font-bold tabular-nums text-on-accent shadow-float">
+                            {index + 1}
+                          </span>
+                        ) : null}
+                        <span className="absolute bottom-1.5 left-1.5">
+                          <PhotoKindBadge kind={photo.kind} />
                         </span>
-                      ) : null}
-                      <span className="absolute bottom-1 left-1 rounded bg-black/50 px-1 text-[9px] font-semibold uppercase text-white">
-                        {PHOTO_KIND_META[photo.kind].label}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
+                      </button>
+                    )
+                  })}
+                </div>
+              </>
             )}
-            <p className="mt-2 text-xs text-slate-400">
-              Click to select — the order you click is the carousel order; #1 is the cover.
+            <p className="mt-3 text-xs text-ink-muted">
+              Click to select. The order you click is the carousel order, and #1 is the cover.
             </p>
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <Card title="Publish">
-            <div className="space-y-4">
-              <div>
-                <p className={labelClass}>Platforms</p>
+            <div className="space-y-5">
+              <fieldset>
+                <legend className={labelClass}>Platforms</legend>
                 <div className="space-y-1.5">
-                  {ALL_PLATFORMS.map((platform) => (
-                    <label key={platform} className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        name="platforms"
-                        value={platform}
-                        checked={platforms.includes(platform)}
-                        onChange={() =>
-                          setPlatforms((current) =>
-                            current.includes(platform)
-                              ? current.filter((p) => p !== platform)
-                              : [...current, platform],
-                          )
-                        }
-                        className="accent-cyan-700"
-                      />
-                      {PLATFORM_META[platform].label}
-                    </label>
-                  ))}
+                  {ALL_PLATFORMS.map((platform) => {
+                    const PlatformIcon = PLATFORM_META[platform].icon
+                    const on = platforms.includes(platform)
+                    return (
+                      <label
+                        key={platform}
+                        className={clsx(
+                          'flex min-h-10 cursor-pointer items-center gap-3 rounded-control border px-3 text-sm transition-colors',
+                          on
+                            ? 'border-accent-line bg-accent-soft text-ink'
+                            : 'border-line text-ink-muted hover:bg-surface-2 hover:text-ink',
+                        )}
+                      >
+                        <input
+                          type="checkbox"
+                          name="platforms"
+                          value={platform}
+                          checked={platforms.includes(platform)}
+                          onChange={() =>
+                            setPlatforms((current) =>
+                              current.includes(platform)
+                                ? current.filter((p) => p !== platform)
+                                : [...current, platform],
+                            )
+                          }
+                          className="size-4 shrink-0"
+                        />
+                        <PlatformIcon aria-hidden className="size-4 shrink-0" />
+                        <span className="min-w-0 flex-1 font-medium">
+                          {PLATFORM_META[platform].label}
+                        </span>
+                      </label>
+                    )
+                  })}
                 </div>
-              </div>
+              </fieldset>
               <Field label="Scheduled for">
                 <input
                   type="datetime-local"
@@ -266,6 +301,7 @@ export function PostComposer({
                   disabled={pending || overLimit}
                   className={`${btnPrimary} w-full`}
                 >
+                  <CalendarCheckIcon aria-hidden />
                   {pending ? 'Saving…' : 'Schedule'}
                 </button>
                 <button
@@ -284,7 +320,8 @@ export function PostComposer({
                   disabled={pending || overLimit}
                   className={`${btnSecondary} w-full`}
                 >
-                  Already posted — record it
+                  <CheckIcon aria-hidden />
+                  Already posted, record it
                 </button>
               </div>
             </div>
@@ -295,14 +332,15 @@ export function PostComposer({
               <img
                 src={`/api/photos/${cover.id}`}
                 alt="Cover"
-                className="aspect-square w-full rounded-lg object-cover"
+                className="aspect-square w-full rounded-control object-cover"
               />
             ) : (
-              <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-slate-100 text-xs text-slate-400">
+              <div className="flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-control border border-dashed border-line-strong/60 bg-surface-2 text-xs text-ink-faint">
+                <ImageIcon aria-hidden className="size-6" />
                 No cover photo
               </div>
             )}
-            <p className="mt-2 line-clamp-6 whitespace-pre-wrap text-xs text-slate-600">
+            <p className="mt-3 line-clamp-6 whitespace-pre-wrap break-words text-sm text-ink-muted">
               {caption || 'Caption preview…'}
             </p>
           </Card>

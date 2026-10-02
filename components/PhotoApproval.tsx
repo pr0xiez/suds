@@ -1,4 +1,5 @@
 'use client'
+import { LockSimpleIcon, ShieldCheckIcon } from '@phosphor-icons/react/ssr'
 import { useState } from 'react'
 import { btnSecondary, btnSmall } from '@/components/ui'
 export function PhotoApproval({ id, approved }: { id: string; approved: boolean }) {
@@ -31,10 +32,20 @@ export function PhotoApproval({ id, approved }: { id: string; approved: boolean 
         aria-pressed={value}
         onClick={change}
       >
-        {value ? 'Marketing approved · revoke' : 'Approve for marketing'}
+        {value ? (
+          <>
+            <ShieldCheckIcon aria-hidden className="text-ok" />
+            Marketing approved · revoke
+          </>
+        ) : (
+          <>
+            <LockSimpleIcon aria-hidden />
+            Approve for marketing
+          </>
+        )}
       </button>
       {error && (
-        <p role="alert" className="text-xs text-rose-800">
+        <p role="alert" className="mt-1 text-xs text-danger">
           {error}
         </p>
       )}

@@ -55,7 +55,8 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
     <div>
       <PageHeader
         title="Edit job"
-        subtitle="Services already on this job keep their booked price; added ones use today’s catalog"
+        back={{ href: `/jobs/${job.id}`, label: 'Back to job' }}
+        subtitle="Services already on this job keep their booked price; added ones use today’s catalog."
       />
       <JobForm
         customers={customers.map((c) => ({

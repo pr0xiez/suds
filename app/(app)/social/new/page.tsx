@@ -34,7 +34,11 @@ export default async function NewPostPage({
 
   return (
     <div>
-      <PageHeader title="New post" subtitle="Pick photos, write the caption, queue it up" />
+      <PageHeader
+        title="New post"
+        subtitle="Pick photos, write the caption, queue it up"
+        back={{ href: '/social', label: 'Content calendar' }}
+      />
       <PostComposer
         photos={photos.map((p) => ({
           id: p.id,

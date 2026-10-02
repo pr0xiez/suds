@@ -109,6 +109,15 @@ must preserve existing IDs, jobs, payments, invoices, and photo relationships.
 
 ## Coding and behavior
 
+UI follows [docs/design.md](docs/design.md): semantic color tokens from
+`app/globals.css` (never raw Tailwind palette colors; light/dark/print come from
+the tokens), primitives in `components/ui.tsx`, Phosphor icons from
+`@phosphor-icons/react/ssr`, Geist plus Archivo (`font-display`) for titles, and
+no em dashes, emoji, or Unicode glyph icons in visible copy. Every multi-column
+grid starts with `grid-cols-1` so long strings cannot widen phone layouts.
+In WSL on `/mnt/d`, start `next dev` with `WATCHPACK_POLLING=true`; inotify does
+not fire there and the dev server otherwise serves stale modules.
+
 Biome: single quotes, no semicolons, 100 columns. TypeScript strict and
 noUncheckedIndexedAccess. Money is integer cents. Time is stored UTC and rendered
 with each business timezone through `lib/dates.ts`, never the server zone.

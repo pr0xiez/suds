@@ -1,30 +1,92 @@
+import {
+  CalendarBlankIcon,
+  CaretLeftIcon,
+  CaretRightIcon,
+  FilmSlateIcon,
+  MegaphoneIcon,
+  PlusIcon,
+  WarningCircleIcon,
+} from '@phosphor-icons/react/ssr'
 import clsx from 'clsx'
 import Link from 'next/link'
-import { btnPrimary, btnSecondary, Card, EmptyState, PostStatusBadge } from '@/components/ui'
+import {
+  btnPrimary,
+  btnSecondary,
+  btnSmall,
+  Card,
+  EmptyState,
+  PageHeader,
+  PLATFORM_META,
+  PlatformChips,
+  POST_STATUS_META,
+  PostStatusBadge,
+  type Tone,
+} from '@/components/ui'
 import { requireUser } from '@/lib/auth/session'
 import {
   dateKey,
   dayBoundsUtc,
   formatDateTime,
   formatMonthYear,
+  formatTime,
+  formatWallDate,
   getWallTime,
   isSameWallDate,
   monthGrid,
   todayWall,
 } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
+import type { Platform, PostStatus } from '@/lib/generated/prisma/enums'
 import { getSettings } from '@/lib/ops/settings'
 
 export const metadata = { title: 'Social' }
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
-function chipClass(status: string, overdue: boolean): string {
-  if (overdue) return 'bg-rose-100 text-rose-800 hover:bg-rose-200'
-  if (status === 'POSTED') return 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
-  if (status === 'SCHEDULED') return 'bg-sky-100 text-sky-800 hover:bg-sky-200'
-  return 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+/** Left-edge calendar chips, one per status tone (mirrors the job calendar blocks). */
+const CHIP_TONE: Record<Tone, string> = {
+  neutral: 'border-line-strong bg-surface-2 text-ink-muted hover:bg-surface-3',
+  info: 'border-info bg-info-soft text-ink hover:border-ink',
+  warn: 'border-warn bg-warn-soft text-ink hover:border-ink',
+  ok: 'border-ok bg-ok-soft text-ink hover:border-ink',
+  danger: 'border-danger bg-danger-soft text-ink hover:border-ink',
+  accent: 'border-accent-ink bg-accent-soft text-ink hover:border-ink',
 }
+
+const LEGEND: Array<{ label: string; swatch: string }> = [
+  { label: 'Draft', swatch: 'bg-line-strong' },
+  { label: 'Scheduled', swatch: 'bg-info' },
+  { label: 'Posted', swatch: 'bg-ok' },
+  { label: 'Overdue', swatch: 'bg-danger' },
+]
+
+function postTone(status: PostStatus, overdue: boolean): { tone: Tone; label: string } {
+  if (overdue) return { tone: 'danger', label: 'Overdue' }
+  const meta = POST_STATUS_META[status]
+  return { tone: meta.tone, label: meta.label }
+}
+
+/** Up to two platform glyphs, then a count, so chips stay one line in narrow cells. */
+function PlatformGlyphs({ platforms }: { platforms: Platform[] }) {
+  if (platforms.length === 0) return null
+  const shown = platforms.slice(0, 2)
+  return (
+    <span className="flex shrink-0 items-center gap-0.5">
+      {shown.map((platform) => {
+        const PlatformIcon = PLATFORM_META[platform].icon
+        return <PlatformIcon key={platform} aria-hidden className="size-3" />
+      })}
+      {platforms.length > 2 ? (
+        <span className="text-[10px] tabular-nums">+{platforms.length - 2}</span>
+      ) : null}
+      <span className="sr-only">
+        {platforms.map((platform) => PLATFORM_META[platform].label).join(', ')}:
+      </span>
+    </span>
+  )
+}
+
+const queueRow = 'block px-4 py-3 transition-colors hover:bg-surface-2 sm:px-5'
 
 export default async function SocialPage({
   searchParams,
@@ -94,196 +156,327 @@ export default async function SocialPage({
   const overdueScheduled = scheduled.filter((p) => p.scheduledFor !== null && p.scheduledFor < now)
   const upcomingScheduled = scheduled.filter((p) => !p.scheduledFor || p.scheduledFor >= now)
 
+  const isOverdue = (post: (typeof monthPosts)[number]) =>
+    post.status === 'SCHEDULED' && post.scheduledFor !== null && post.scheduledFor < now
+
+  // Phone agenda: the days of this month that have something on them.
+  const agendaDays = weeks
+    .flat()
+    .filter((day) => day.month === month)
+    .map((day) => ({ day, posts: byDay.get(dateKey(day)) ?? [] }))
+    .filter((entry) => entry.posts.length > 0)
+
+  const monthNav = (
+    <div className="flex items-center gap-1">
+      <Link
+        href={`/social?month=${monthKey(prev.year, prev.month)}`}
+        aria-label="Previous month"
+        title="Previous month"
+        className={clsx(btnSecondary, 'min-h-8! w-8 px-0! [&_svg]:size-3.5!')}
+      >
+        <CaretLeftIcon aria-hidden />
+      </Link>
+      <Link href="/social" className={clsx(btnSecondary, btnSmall)}>
+        This month
+      </Link>
+      <Link
+        href={`/social?month=${monthKey(next.year, next.month)}`}
+        aria-label="Next month"
+        title="Next month"
+        className={clsx(btnSecondary, 'min-h-8! w-8 px-0! [&_svg]:size-3.5!')}
+      >
+        <CaretRightIcon aria-hidden />
+      </Link>
+    </div>
+  )
+
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Social</h1>
-          <p className="mt-1 text-sm text-slate-500">{formatMonthYear(year, month)}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/social?month=${monthKey(prev.year, prev.month)}`} className={btnSecondary}>
-            ← Prev
-          </Link>
-          <Link href="/social" className={btnSecondary}>
-            This month
-          </Link>
-          <Link href={`/social?month=${monthKey(next.year, next.month)}`} className={btnSecondary}>
-            Next →
-          </Link>
-          <Link href="/social/new" className={btnPrimary}>
-            + New post
-          </Link>
-          <Link href="/social/shorts" className={btnSecondary}>
-            Edit a short
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        title="Content calendar"
+        subtitle="Plan posts, copy them into each app, then mark them posted."
+        actions={
+          <>
+            <Link href="/social/shorts" className={btnSecondary}>
+              <FilmSlateIcon aria-hidden />
+              Edit a short
+            </Link>
+            <Link href="/social/new" className={btnPrimary}>
+              <PlusIcon aria-hidden />
+              New post
+            </Link>
+          </>
+        }
+      />
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_18rem]">
-        <Card padded={false}>
-          <div className="overflow-x-auto">
-            <div className="min-w-[720px]">
-              <div className="grid grid-cols-7 border-b border-slate-200">
-                {WEEKDAY_LABELS.map((label) => (
-                  <p
-                    key={label}
-                    className="px-2 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500"
-                  >
-                    {label}
-                  </p>
-                ))}
-              </div>
-              {weeks.map((week) => (
+      <Card
+        className="overflow-hidden"
+        title={<span className="text-base">{formatMonthYear(year, month)}</span>}
+        actions={monthNav}
+        padded={false}
+      >
+        {/* Month grid: laptops and up */}
+        <div className="hidden lg:block">
+          <div className="grid grid-cols-7 border-b border-line bg-surface-2/60">
+            {WEEKDAY_LABELS.map((label) => (
+              <p key={label} className="px-2.5 py-2 text-xs font-medium text-ink-muted">
+                {label}
+              </p>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-px bg-line">
+            {weeks.flat().map((day) => {
+              const inMonth = day.month === month
+              const isToday = isSameWallDate(day, today)
+              const posts = byDay.get(dateKey(day)) ?? []
+              return (
                 <div
-                  key={dateKey(week[0] ?? firstCell)}
-                  className="grid grid-cols-7 border-b border-slate-100 last:border-b-0"
+                  key={dateKey(day)}
+                  className={clsx(
+                    'flex min-h-28 min-w-0 flex-col gap-1 p-1.5',
+                    inMonth ? 'bg-surface' : 'bg-canvas',
+                  )}
                 >
-                  {week.map((day) => {
-                    const inMonth = day.month === month
-                    const isToday = isSameWallDate(day, today)
-                    const posts = byDay.get(dateKey(day)) ?? []
-                    return (
-                      <div
-                        key={dateKey(day)}
-                        className={clsx(
-                          'min-h-24 border-r border-slate-100 p-1.5 last:border-r-0',
-                          !inMonth && 'bg-slate-50/70',
-                        )}
-                      >
-                        <p
+                  <p className="flex">
+                    <span
+                      className={clsx(
+                        'grid size-6 place-items-center rounded-full text-xs tabular-nums',
+                        isToday
+                          ? 'bg-accent font-semibold text-on-accent'
+                          : inMonth
+                            ? 'font-medium text-ink'
+                            : 'text-ink-faint',
+                      )}
+                    >
+                      {day.day}
+                    </span>
+                    {isToday ? <span className="sr-only">(today)</span> : null}
+                  </p>
+                  <div className="space-y-1">
+                    {posts.slice(0, 3).map((post) => {
+                      const overdue = isOverdue(post)
+                      const { tone, label } = postTone(post.status, overdue)
+                      const when = post.scheduledFor ?? post.postedAt
+                      const caption = post.caption.split('\n')[0]?.slice(0, 26) || 'Post'
+                      return (
+                        <Link
+                          key={post.id}
+                          href={`/social/${post.id}`}
+                          title={`${label}${when ? `, ${formatTime(when, tz)}` : ''}: ${caption}`}
                           className={clsx(
-                            'mb-1 text-right text-xs tabular-nums',
-                            isToday
-                              ? 'font-bold text-cyan-700'
-                              : inMonth
-                                ? 'text-slate-600'
-                                : 'text-slate-300',
+                            'flex min-w-0 items-center gap-1 rounded-tight border-l-2 px-1.5 py-1 text-[11px] font-medium leading-tight transition-colors',
+                            CHIP_TONE[tone],
                           )}
                         >
-                          {day.day}
-                        </p>
-                        <div className="space-y-1">
-                          {posts.slice(0, 3).map((post) => {
-                            const overdue =
-                              post.status === 'SCHEDULED' &&
-                              post.scheduledFor !== null &&
-                              post.scheduledFor < now
-                            return (
-                              <Link
-                                key={post.id}
-                                href={`/social/${post.id}`}
-                                className={clsx(
-                                  'block truncate rounded px-1.5 py-0.5 text-[11px] font-medium',
-                                  chipClass(post.status, overdue),
-                                )}
-                              >
-                                {post.caption.split('\n')[0]?.slice(0, 26) || 'Post'}
-                              </Link>
-                            )
-                          })}
-                          {posts.length > 3 ? (
-                            <p className="px-1.5 text-[10px] text-slate-400">
-                              +{posts.length - 3} more
-                            </p>
-                          ) : null}
-                        </div>
-                      </div>
-                    )
-                  })}
+                          <PlatformGlyphs platforms={post.platforms} />
+                          <span className="min-w-0 truncate">{caption}</span>
+                          <span className="sr-only">, {label}</span>
+                        </Link>
+                      )
+                    })}
+                    {posts.length > 3 ? (
+                      <p className="px-1.5 text-[11px] text-ink-faint">+{posts.length - 3} more</p>
+                    ) : null}
+                  </div>
                 </div>
-              ))}
-            </div>
+              )
+            })}
           </div>
-        </Card>
-
-        <div className="space-y-6">
-          {overdueScheduled.length > 0 ? (
-            <Card title="Overdue" className="border-rose-200">
-              <ul className="space-y-2">
-                {overdueScheduled.map((post) => (
-                  <li key={post.id}>
-                    <Link href={`/social/${post.id}`} className="block text-sm hover:underline">
-                      <span className="font-medium text-rose-700">
-                        {post.scheduledFor ? formatDateTime(post.scheduledFor, tz) : ''}
-                      </span>
-                      <span className="block truncate text-slate-600">
-                        {post.caption.split('\n')[0] || 'No caption'}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
-
-          <Card title="Up next">
-            {upcomingScheduled.length === 0 ? (
-              <p className="text-sm text-slate-500">Nothing scheduled.</p>
-            ) : (
-              <ul className="space-y-2">
-                {upcomingScheduled.map((post) => (
-                  <li key={post.id}>
-                    <Link href={`/social/${post.id}`} className="block text-sm hover:underline">
-                      <span className="font-medium text-slate-800">
-                        {post.scheduledFor ? formatDateTime(post.scheduledFor, tz) : 'Unscheduled'}
-                      </span>
-                      <span className="block truncate text-slate-500">
-                        {post.caption.split('\n')[0] || 'No caption'}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
-          <Card title="Drafts">
-            {drafts.length === 0 ? (
-              <p className="text-sm text-slate-500">No drafts.</p>
-            ) : (
-              <ul className="space-y-2">
-                {drafts.map((post) => (
-                  <li key={post.id}>
-                    <Link
-                      href={`/social/${post.id}`}
-                      className="flex items-center justify-between gap-2 text-sm hover:underline"
-                    >
-                      <span className="truncate text-slate-600">
-                        {post.caption.split('\n')[0] || 'Untitled draft'}
-                      </span>
-                      <PostStatusBadge status={post.status} />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
-          {posted.length > 0 ? (
-            <Card title="Recently posted">
-              <ul className="space-y-2">
-                {posted.map((post) => (
-                  <li key={post.id}>
-                    <Link href={`/social/${post.id}`} className="block text-sm hover:underline">
-                      <span className="font-medium text-slate-800">
-                        {post.postedAt ? formatDateTime(post.postedAt, tz) : ''}
-                      </span>
-                      <span className="block truncate text-slate-500">
-                        {post.caption.split('\n')[0] || 'No caption'}
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ) : null}
+          <ul
+            aria-label="Status colors"
+            className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line px-5 py-3 text-xs text-ink-muted"
+          >
+            {LEGEND.map((item) => (
+              <li key={item.label} className="inline-flex items-center gap-1.5">
+                <span aria-hidden className={clsx('h-3 w-1 rounded-full', item.swatch)} />
+                {item.label}
+              </li>
+            ))}
+          </ul>
         </div>
-      </div>
+
+        {/* Agenda: phones and tablets */}
+        <div className="lg:hidden">
+          {agendaDays.length === 0 ? (
+            <div className="p-4 sm:p-5">
+              <EmptyState
+                icon={CalendarBlankIcon}
+                title={`Nothing on the calendar for ${formatMonthYear(year, month)}`}
+              />
+            </div>
+          ) : (
+            <ol className="divide-y divide-line">
+              {agendaDays.map(({ day, posts }) => {
+                const isToday = isSameWallDate(day, today)
+                return (
+                  <li key={dateKey(day)} className="flex gap-3 px-4 py-3 sm:px-5">
+                    <div className="flex w-10 shrink-0 flex-col items-center pt-0.5">
+                      <span className="text-xs text-ink-muted">
+                        {formatWallDate(day, { weekday: 'short' })}
+                      </span>
+                      <span
+                        className={clsx(
+                          'mt-0.5 grid size-8 place-items-center rounded-full text-sm font-semibold tabular-nums',
+                          isToday ? 'bg-accent text-on-accent' : 'text-ink',
+                        )}
+                      >
+                        {day.day}
+                      </span>
+                      {isToday ? <span className="sr-only">(today)</span> : null}
+                    </div>
+                    <ul className="min-w-0 flex-1 space-y-1.5">
+                      {posts.map((post) => {
+                        const overdue = isOverdue(post)
+                        const { tone } = postTone(post.status, overdue)
+                        const when = post.scheduledFor ?? post.postedAt
+                        return (
+                          <li key={post.id}>
+                            <Link
+                              href={`/social/${post.id}`}
+                              className={clsx(
+                                'block rounded-tight border-l-2 px-2.5 py-2 transition-colors',
+                                CHIP_TONE[tone],
+                              )}
+                            >
+                              <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                <PlatformChips platforms={post.platforms} />
+                                <span className="text-xs tabular-nums text-ink-muted">
+                                  {when ? formatTime(when, tz) : ''}
+                                </span>
+                                <span className="ml-auto">
+                                  <PostStatusBadge status={post.status} overdue={overdue} />
+                                </span>
+                              </span>
+                              <span className="mt-1 block truncate text-sm text-ink">
+                                {post.caption.split('\n')[0] || 'Post'}
+                              </span>
+                            </Link>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </li>
+                )
+              })}
+            </ol>
+          )}
+        </div>
+      </Card>
+
+      <section className="mt-10">
+        <h2 className="font-display text-lg font-bold text-ink">Post queue</h2>
+        <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div className="space-y-6">
+            {overdueScheduled.length > 0 ? (
+              <Card
+                title={
+                  <span className="inline-flex items-center gap-1.5 text-danger">
+                    <WarningCircleIcon aria-hidden className="size-4" />
+                    Overdue
+                  </span>
+                }
+                className="border-danger-line"
+                padded={false}
+              >
+                <ul className="divide-y divide-line">
+                  {overdueScheduled.map((post) => (
+                    <li key={post.id}>
+                      <Link href={`/social/${post.id}`} className={queueRow}>
+                        <span className="flex flex-wrap items-center gap-2">
+                          <PlatformChips platforms={post.platforms} />
+                          <span className="text-xs font-medium text-danger">
+                            {post.scheduledFor ? formatDateTime(post.scheduledFor, tz) : ''}
+                          </span>
+                        </span>
+                        <span className="mt-1 block truncate text-sm text-ink">
+                          {post.caption.split('\n')[0] || 'No caption'}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            ) : null}
+
+            <Card title="Up next" padded={false}>
+              {upcomingScheduled.length === 0 ? (
+                <p className="px-4 py-4 text-sm text-ink-muted sm:px-5">Nothing scheduled.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {upcomingScheduled.map((post) => (
+                    <li key={post.id}>
+                      <Link href={`/social/${post.id}`} className={queueRow}>
+                        <span className="flex flex-wrap items-center gap-2">
+                          <PlatformChips platforms={post.platforms} />
+                          <span className="text-xs font-medium tabular-nums text-ink-muted">
+                            {post.scheduledFor
+                              ? formatDateTime(post.scheduledFor, tz)
+                              : 'Unscheduled'}
+                          </span>
+                        </span>
+                        <span className="mt-1 block truncate text-sm text-ink">
+                          {post.caption.split('\n')[0] || 'No caption'}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+
+          <div className="space-y-6">
+            <Card title="Drafts" padded={false}>
+              {drafts.length === 0 ? (
+                <p className="px-4 py-4 text-sm text-ink-muted sm:px-5">No drafts.</p>
+              ) : (
+                <ul className="divide-y divide-line">
+                  {drafts.map((post) => (
+                    <li key={post.id}>
+                      <Link
+                        href={`/social/${post.id}`}
+                        className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-surface-2 sm:px-5"
+                      >
+                        <span className="min-w-0 truncate text-sm text-ink">
+                          {post.caption.split('\n')[0] || 'Untitled draft'}
+                        </span>
+                        <PostStatusBadge status={post.status} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+
+            {posted.length > 0 ? (
+              <Card title="Recently posted" padded={false}>
+                <ul className="divide-y divide-line">
+                  {posted.map((post) => (
+                    <li key={post.id}>
+                      <Link href={`/social/${post.id}`} className={queueRow}>
+                        <span className="flex flex-wrap items-center gap-2">
+                          <PlatformChips platforms={post.platforms} />
+                          <span className="text-xs font-medium tabular-nums text-ink-muted">
+                            {post.postedAt ? formatDateTime(post.postedAt, tz) : ''}
+                          </span>
+                        </span>
+                        <span className="mt-1 block truncate text-sm text-ink">
+                          {post.caption.split('\n')[0] || 'No caption'}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            ) : null}
+          </div>
+        </div>
+      </section>
 
       {monthPosts.length === 0 && drafts.length === 0 ? (
         <div className="mt-6">
           <EmptyState
+            icon={MegaphoneIcon}
             title="No posts yet"
             hint="Finish a job with photos, then hit “Create post from this job.”"
           />

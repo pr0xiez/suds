@@ -1,21 +1,228 @@
 @import "tailwindcss";
 
+/*
+ * Suds design tokens. See docs/design.md for the rules that go with them.
+ *
+ * One neutral family (graphite with a faint lime cast), one accent (lime), and
+ * semantic status tones. Pages use the semantic utilities generated below
+ * (bg-surface, text-ink-muted, border-line, bg-ok-soft ...) and never raw
+ * Tailwind palette colors, so light and dark mode come from this file alone.
+ * Print always uses the light set.
+ */
+
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
+
+  --canvas: oklch(0.968 0.004 120);
+  --surface: oklch(0.993 0.002 120);
+  --surface-2: oklch(0.948 0.005 120);
+  --surface-3: oklch(0.915 0.006 120);
+  --line: oklch(0.9 0.006 120);
+  --line-strong: oklch(0.655 0.01 120);
+
+  --ink: oklch(0.2 0.012 120);
+  --ink-muted: oklch(0.43 0.012 120);
+  --ink-faint: oklch(0.53 0.01 120);
+
+  --accent: oklch(0.9 0.2 124);
+  --accent-strong: oklch(0.85 0.21 127);
+  --accent-ink: oklch(0.47 0.13 132);
+  --accent-soft: oklch(0.955 0.07 122);
+  --accent-line: oklch(0.76 0.16 128);
+  --on-accent: oklch(0.2 0.03 125);
+
+  --primary: oklch(0.2 0.012 120);
+  --primary-hover: oklch(0.31 0.012 120);
+  --on-primary: oklch(0.985 0.003 120);
+  --focus: oklch(0.47 0.13 132);
+
+  /* Sidebar and mobile bar: dark in both modes. */
+  --chrome: oklch(0.185 0.01 120);
+  --chrome-2: oklch(0.245 0.01 120);
+  --chrome-line: oklch(0.3 0.01 120);
+  --chrome-ink: oklch(0.94 0.005 120);
+  --chrome-muted: oklch(0.7 0.01 120);
+
+  --info: oklch(0.47 0.13 252);
+  --info-soft: oklch(0.955 0.025 245);
+  --info-line: oklch(0.85 0.06 245);
+  --warn: oklch(0.5 0.11 62);
+  --warn-soft: oklch(0.965 0.045 85);
+  --warn-line: oklch(0.86 0.09 80);
+  --ok: oklch(0.47 0.1 165);
+  --ok-soft: oklch(0.955 0.035 165);
+  --ok-line: oklch(0.84 0.07 165);
+  --danger: oklch(0.51 0.17 25);
+  --danger-soft: oklch(0.96 0.025 20);
+  --danger-line: oklch(0.86 0.07 22);
+
+  --shadow-tint: oklch(0.25 0.02 120 / 0.08);
+}
+
+@media screen and (prefers-color-scheme: dark) {
+  :root {
+    --canvas: oklch(0.155 0.006 120);
+    --surface: oklch(0.195 0.007 120);
+    --surface-2: oklch(0.235 0.008 120);
+    --surface-3: oklch(0.275 0.009 120);
+    --line: oklch(0.285 0.008 120);
+    --line-strong: oklch(0.505 0.01 120);
+
+    --ink: oklch(0.955 0.004 120);
+    --ink-muted: oklch(0.77 0.008 120);
+    --ink-faint: oklch(0.65 0.01 120);
+
+    --accent-strong: oklch(0.94 0.19 122);
+    --accent-ink: oklch(0.88 0.18 124);
+    --accent-soft: oklch(0.28 0.055 125);
+    --accent-line: oklch(0.56 0.13 128);
+
+    --primary: oklch(0.9 0.2 124);
+    --primary-hover: oklch(0.94 0.19 122);
+    --on-primary: oklch(0.2 0.03 125);
+    --focus: oklch(0.88 0.18 124);
+
+    --chrome: oklch(0.125 0.005 120);
+    --chrome-2: oklch(0.2 0.008 120);
+    --chrome-line: oklch(0.24 0.008 120);
+
+    --info: oklch(0.83 0.09 245);
+    --info-soft: oklch(0.29 0.055 252);
+    --info-line: oklch(0.42 0.08 252);
+    --warn: oklch(0.86 0.11 85);
+    --warn-soft: oklch(0.3 0.055 70);
+    --warn-line: oklch(0.45 0.08 70);
+    --ok: oklch(0.84 0.1 165);
+    --ok-soft: oklch(0.28 0.045 165);
+    --ok-line: oklch(0.42 0.07 165);
+    --danger: oklch(0.81 0.1 25);
+    --danger-soft: oklch(0.3 0.07 25);
+    --danger-line: oklch(0.45 0.1 25);
+
+    --shadow-tint: oklch(0.05 0.01 120 / 0.5);
+  }
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-line: var(--accent-line);
+  --color-on-accent: var(--on-accent);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-on-primary: var(--on-primary);
+  --color-focus: var(--focus);
+  --color-chrome: var(--chrome);
+  --color-chrome-2: var(--chrome-2);
+  --color-chrome-line: var(--chrome-line);
+  --color-chrome-ink: var(--chrome-ink);
+  --color-chrome-muted: var(--chrome-muted);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-line: var(--info-line);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-line: var(--warn-line);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-line: var(--ok-line);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-line: var(--danger-line);
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+
+  --shadow-panel: 0 1px 2px var(--shadow-tint);
+  --shadow-float: 0 12px 32px -8px var(--shadow-tint), 0 2px 6px var(--shadow-tint);
+}
+
+/* Shape scale: panels 16px, controls 10px, dense items 6px, pills full. */
+@theme {
+  --radius-panel: 1rem;
+  --radius-control: 0.625rem;
+  --radius-tight: 0.375rem;
+
+  --ease-out-soft: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-rise: rise 0.7s var(--ease-out-soft) both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* Archivo, opened up on its width axis: page titles and the landing page only. */
+@utility font-display {
+  font-family: var(--font-archivo), var(--font-geist-sans), ui-sans-serif, sans-serif;
+  font-stretch: 116%;
+  letter-spacing: -0.02em;
 }
 
 body {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--canvas);
+  color: var(--ink);
   -webkit-text-size-adjust: 100%;
+  /* Wide content scrolls in its own box; the page never scrolls sideways. */
+  overflow-x: hidden;
+  accent-color: var(--accent-ink);
 }
 
-/* Wide content scrolls in its own box; the page never scrolls sideways. */
-body {
-  overflow-x: hidden;
+::selection {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+/* Landing-page scroll reveal; progressive enhancement only. */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 28%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every utility */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every utility */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced motion must beat every utility */
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @media print {
+  :root {
+    color-scheme: light;
+  }
   .no-print {
     /* biome-ignore lint/complexity/noImportantStyles: must beat utility-class specificity when printing */
     display: none !important;

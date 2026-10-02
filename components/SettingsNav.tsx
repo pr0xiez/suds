@@ -1,5 +1,8 @@
+'use client'
+
 import clsx from 'clsx'
 import Link from 'next/link'
+import { useEffect, useRef } from 'react'
 
 const TABS = [
   { href: '/settings', label: 'Business' },
@@ -11,22 +14,40 @@ const TABS = [
 ]
 
 export function SettingsNav({ current, isOwner }: { current: string; isOwner: boolean }) {
+  const strip = useRef<HTMLElement>(null)
+
+  // On phones the tab strip scrolls sideways; bring the current tab into view
+  // without moving the page vertically.
+  useEffect(() => {
+    const node = strip.current
+    const active = node?.querySelector<HTMLElement>('[aria-current="page"]')
+    if (!node || !active || node.scrollWidth <= node.clientWidth) return
+    node.scrollLeft = active.offsetLeft - (node.clientWidth - active.offsetWidth) / 2
+  }, [])
+
   return (
-    <div className="mb-6 flex flex-wrap gap-1 border-b border-slate-200 pb-px">
-      {TABS.filter((tab) => !tab.ownerOnly || isOwner).map((tab) => (
-        <Link
-          key={tab.href}
-          href={tab.href}
-          className={clsx(
-            'rounded-t-lg border-b-2 px-3 py-2 text-sm font-medium',
-            current === tab.href
-              ? 'border-cyan-700 text-cyan-700'
-              : 'border-transparent text-slate-500 hover:text-slate-800',
-          )}
-        >
-          {tab.label}
-        </Link>
-      ))}
-    </div>
+    <nav
+      ref={strip}
+      aria-label="Settings sections"
+      className="relative -mx-4 mb-8 overflow-x-auto border-b border-line px-4 sm:mx-0 sm:px-0"
+    >
+      <div className="flex gap-5">
+        {TABS.filter((tab) => !tab.ownerOnly || isOwner).map((tab) => (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            aria-current={current === tab.href ? 'page' : undefined}
+            className={clsx(
+              '-mb-px whitespace-nowrap border-b-2 py-3 text-sm font-medium transition-colors',
+              current === tab.href
+                ? 'border-ink text-ink'
+                : 'border-transparent text-ink-muted hover:text-ink',
+            )}
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </div>
+    </nav>
   )
 }

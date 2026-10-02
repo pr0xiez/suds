@@ -33,7 +33,7 @@ export default async function SettingsPage({
 
       <form action={updateSettingsAction} className="space-y-6">
         <Card title="Business">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <Field label="Business name" className="sm:col-span-2">
               <input
                 name="businessName"
@@ -56,7 +56,7 @@ export default async function SettingsPage({
             <Field label="Address">
               <input name="address" defaultValue={settings.address} className={inputClass} />
             </Field>
-            <Field label="City (used in captions)">
+            <Field label="City" hint="Used in captions.">
               <input name="city" defaultValue={settings.city} className={inputClass} />
             </Field>
             <Field label="Timezone">
@@ -76,7 +76,7 @@ export default async function SettingsPage({
         </Card>
 
         <Card title="Social profiles">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
             <Field label="Instagram handle">
               <input
                 name="instagramHandle"
@@ -85,7 +85,7 @@ export default async function SettingsPage({
                 className={inputClass}
               />
             </Field>
-            <Field label="Facebook page (name or URL)">
+            <Field label="Facebook page" hint="Page name or URL.">
               <input
                 name="facebookPage"
                 defaultValue={settings.facebookPage}
@@ -107,7 +107,11 @@ export default async function SettingsPage({
                 className={inputClass}
               />
             </Field>
-            <Field label="Hashtag bank (space separated)" className="sm:col-span-2">
+            <Field
+              label="Hashtag bank"
+              hint="Separate hashtags with spaces."
+              className="sm:col-span-2"
+            >
               <textarea
                 name="hashtags"
                 defaultValue={settings.hashtags}
@@ -118,9 +122,11 @@ export default async function SettingsPage({
           </div>
         </Card>
 
-        <button type="submit" className={btnPrimary}>
-          Save settings
-        </button>
+        <div className="flex justify-end">
+          <button type="submit" className={btnPrimary}>
+            Save settings
+          </button>
+        </div>
       </form>
     </div>
   )

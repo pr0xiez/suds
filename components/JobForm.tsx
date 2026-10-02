@@ -1,10 +1,13 @@
 'use client'
 
+import { CheckIcon, PlusIcon, WarningIcon, XIcon } from '@phosphor-icons/react/ssr'
+import clsx from 'clsx'
 import Link from 'next/link'
 import { useActionState, useState } from 'react'
 import { type FormState, saveJobAction } from '@/app/actions/jobs'
 import { ErrorBanner } from '@/components/banners'
 import {
+  btnGhost,
   btnPrimary,
   btnSecondary,
   btnSmall,
@@ -133,10 +136,10 @@ export function JobForm({
         ))}
       <ErrorBanner message={state?.error} />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
-        <div className="space-y-6">
-          <Card title="Who & when">
-            <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="min-w-0 space-y-6">
+          <Card title="Who and when">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Customer">
                 <select
                   name="customerId"
@@ -149,7 +152,7 @@ export function JobForm({
                   }}
                   required
                 >
-                  <option value="">— pick —</option>
+                  <option value="">Choose a customer</option>
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -165,7 +168,7 @@ export function JobForm({
                   onChange={(e) => setVehicleId(e.target.value)}
                   required
                 >
-                  <option value="">— pick —</option>
+                  <option value="">Choose a vehicle</option>
                   {vehicles.map((v) => (
                     <option key={v.id} value={v.id}>
                       {v.label}
@@ -173,7 +176,7 @@ export function JobForm({
                   ))}
                 </select>
               </Field>
-              <Field label="Date & time">
+              <Field label="Date and time">
                 <input
                   type="datetime-local"
                   name="scheduledAt"
@@ -182,7 +185,7 @@ export function JobForm({
                   required
                 />
               </Field>
-              <Field label="Duration override (minutes)">
+              <Field label="Duration override (minutes)" hint="Leave blank to use the services.">
                 <input
                   type="number"
                   name="durationMin"
@@ -192,28 +195,34 @@ export function JobForm({
                   step={1}
                   value={durationOverride}
                   onChange={(e) => setDurationOverride(e.target.value)}
-                  placeholder={`auto — ${minutesToHuman(derivedMin)}`}
+                  placeholder={`Auto, ${minutesToHuman(derivedMin)}`}
                   className={inputClass}
                 />
               </Field>
             </div>
             {customerId && vehicles.length === 0 ? (
-              <p className="mt-3 text-sm text-amber-700">
-                This customer has no vehicles yet —{' '}
-                <Link href={`/customers/${customerId}`} className="underline">
-                  add one first
-                </Link>
-                .
+              <p className="mt-4 flex items-start gap-2 rounded-control border border-warn-line bg-warn-soft px-3 py-2.5 text-sm text-warn">
+                <WarningIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+                <span className="min-w-0">
+                  This customer has no vehicles yet.{' '}
+                  <Link
+                    href={`/customers/${customerId}`}
+                    className="font-medium underline underline-offset-2"
+                  >
+                    Add one first
+                  </Link>
+                  .
+                </span>
               </p>
             ) : null}
           </Card>
 
           <Card title="Services">
-            <div className="space-y-4">
+            <div className="space-y-5">
               {grouped.map((group) => (
-                <div key={group.label}>
-                  <p className={labelClass}>{group.label}</p>
-                  <div className="grid gap-2 sm:grid-cols-2">
+                <fieldset key={group.label}>
+                  <legend className={labelClass}>{group.label}</legend>
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {group.services.map((service) => {
                       const booked = bookedLine(service.id)
                       // Selected copies as they will save; unselected, what checking would add.
@@ -224,61 +233,66 @@ export function JobForm({
                         !service.retired &&
                         (booked.priceCents !== service.priceCents ||
                           booked.durationMin !== service.durationMin)
+                      const selected = serviceIds.includes(service.id)
                       return (
                         <label
                           key={service.id}
-                          className={`flex cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm transition-colors ${
-                            serviceIds.includes(service.id)
-                              ? 'border-cyan-600 bg-cyan-50'
-                              : 'border-slate-200 bg-white hover:border-slate-300'
-                          }`}
+                          className={clsx(
+                            'flex min-h-14 cursor-pointer items-center justify-between gap-3 rounded-control border px-3 py-2.5 text-sm transition-colors',
+                            selected
+                              ? 'border-accent-line bg-accent-soft'
+                              : 'border-line bg-surface hover:border-line-strong hover:bg-surface-2',
+                          )}
                         >
-                          <span className="flex items-center gap-2">
+                          <span className="flex min-w-0 items-center gap-3">
                             <input
                               type="checkbox"
                               name="serviceIds"
                               value={service.id}
-                              checked={serviceIds.includes(service.id)}
+                              checked={selected}
                               onChange={() => toggleService(service.id)}
-                              className="accent-cyan-700"
+                              className="size-4 shrink-0"
                             />
-                            <span>
-                              <span className="block font-medium text-slate-900">
+                            <span className="min-w-0">
+                              <span className="block font-medium text-ink">
                                 {shown[0]?.name}
                                 {copies.length > 1 ? ` ×${copies.length}` : null}
                               </span>
-                              <span className="block text-xs text-slate-500">
+                              <span className="block text-xs tabular-nums text-ink-muted">
                                 {minutesToHuman(
                                   shown.reduce((sum, line) => sum + line.durationMin, 0),
                                 )}
                               </span>
                               {repriced ? (
-                                <span className="block text-xs text-slate-500">
+                                <span className="block text-xs text-ink-muted">
                                   Booked rate · catalog now {formatCents(service.priceCents)},{' '}
                                   {minutesToHuman(service.durationMin)}
                                 </span>
                               ) : null}
                             </span>
                           </span>
-                          <span className="font-semibold tabular-nums text-slate-700">
+                          <span className="shrink-0 font-semibold tabular-nums text-ink">
                             {formatCents(shown.reduce((sum, line) => sum + line.priceCents, 0))}
                           </span>
                         </label>
                       )
                     })}
                   </div>
-                </div>
+                </fieldset>
               ))}
 
               <div>
                 <p className={labelClass}>Custom lines</p>
                 <div className="space-y-2">
                   {customLines.map((line, index) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity beyond position
-                    <div key={index} className="flex items-center gap-2">
+                    <div
+                      // biome-ignore lint/suspicious/noArrayIndexKey: rows have no identity beyond position
+                      key={index}
+                      className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-2 rounded-control bg-surface-2 p-2 sm:grid-cols-[minmax(0,1fr)_7rem_6rem_auto] sm:bg-transparent sm:p-0"
+                    >
                       <input
                         aria-label="Line name"
-                        className={inputClass}
+                        className={clsx(inputClass, 'col-span-3 sm:col-span-1')}
                         placeholder="e.g. Excessive pet hair"
                         value={line.name}
                         onChange={(e) =>
@@ -291,7 +305,7 @@ export function JobForm({
                       />
                       <input
                         aria-label="Line price"
-                        className={`${inputClass} w-28 shrink-0`}
+                        className={clsx(inputClass, 'tabular-nums')}
                         placeholder="$"
                         value={line.price}
                         onChange={(e) =>
@@ -304,7 +318,7 @@ export function JobForm({
                       />
                       <input
                         aria-label="Line minutes"
-                        className={`${inputClass} w-24 shrink-0`}
+                        className={clsx(inputClass, 'tabular-nums')}
                         placeholder="min"
                         value={line.durationMin}
                         onChange={(e) =>
@@ -318,10 +332,11 @@ export function JobForm({
                       <button
                         type="button"
                         aria-label="Remove line"
-                        className={`${btnSecondary} ${btnSmall} shrink-0`}
+                        title="Remove line"
+                        className={clsx(btnGhost, 'w-10 px-0!')}
                         onClick={() => setCustomLines((rows) => rows.filter((_, i) => i !== index))}
                       >
-                        ×
+                        <XIcon aria-hidden />
                       </button>
                     </div>
                   ))}
@@ -332,7 +347,8 @@ export function JobForm({
                       setCustomLines((rows) => [...rows, { name: '', price: '', durationMin: '' }])
                     }
                   >
-                    + Add custom line
+                    <PlusIcon aria-hidden />
+                    Add custom line
                   </button>
                 </div>
               </div>
@@ -340,8 +356,8 @@ export function JobForm({
           </Card>
 
           <Card title="Notes">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Job notes (visible on invoice)">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Job notes" hint="Shown on the invoice.">
                 <textarea name="notes" defaultValue={initial.notes} className={textareaClass} />
               </Field>
               <Field label="Internal notes">
@@ -355,37 +371,41 @@ export function JobForm({
           </Card>
         </div>
 
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-6 lg:self-start">
           <Card title="Summary">
-            <dl className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <dt className="text-slate-500">Services</dt>
-                <dd className="font-medium tabular-nums">{formatCents(serviceSum + customSum)}</dd>
+            <dl className="space-y-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-ink-muted">Services</dt>
+                <dd className="font-medium tabular-nums text-ink">
+                  {formatCents(serviceSum + customSum)}
+                </dd>
               </div>
-              <div className="flex items-center justify-between">
-                <dt className="text-slate-500">Discount</dt>
-                <dd>
+              <div className="flex items-center justify-between gap-3">
+                <dt className="text-ink-muted">Discount</dt>
+                <dd className="w-28 shrink-0">
                   <input
                     aria-label="Discount"
                     name="discount"
-                    className={`${inputClass} w-24 text-right`}
+                    className={clsx(inputClass, 'text-right tabular-nums')}
                     placeholder="0"
                     value={discount}
                     onChange={(e) => setDiscount(e.target.value)}
                   />
                 </dd>
               </div>
-              <div className="flex justify-between border-t border-slate-200 pt-2 text-base">
-                <dt className="font-semibold">Total</dt>
-                <dd className="font-bold tabular-nums">{formatCents(total)}</dd>
+              <div className="flex items-baseline justify-between gap-3 border-t border-line pt-3">
+                <dt className="font-semibold text-ink">Total</dt>
+                <dd className="font-display text-xl font-semibold tabular-nums text-ink">
+                  {formatCents(total)}
+                </dd>
               </div>
-              <div className="flex justify-between">
-                <dt className="text-slate-500">Est. duration</dt>
-                <dd className="text-right tabular-nums text-slate-700">
+              <div className="flex justify-between gap-3">
+                <dt className="text-ink-muted">Est. duration</dt>
+                <dd className="text-right tabular-nums text-ink">
                   {minutesToHuman(durationMin)}
                   {durationMin !== derivedMin ? (
-                    <span className="block text-xs text-slate-500">
-                      override · services {minutesToHuman(derivedMin)}
+                    <span className="block text-xs text-ink-muted">
+                      Override, services {minutesToHuman(derivedMin)}
                     </span>
                   ) : null}
                 </dd>
@@ -394,6 +414,7 @@ export function JobForm({
           </Card>
           <div className="flex gap-2">
             <button type="submit" disabled={pending} className={`${btnPrimary} flex-1`}>
+              {pending ? null : <CheckIcon aria-hidden />}
               {pending ? 'Saving…' : initial.jobId ? 'Save job' : 'Book job'}
             </button>
             <Link

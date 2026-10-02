@@ -37,9 +37,12 @@
     "seed": "node --import tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@fontsource-variable/archivo": "^5.3.0",
+    "@phosphor-icons/react": "^2.1.10",
     "@prisma/adapter-pg": "^7.0.0",
     "@prisma/client": "^7.0.0",
     "clsx": "^2.1.1",
+    "geist": "^1.7.2",
     "next": "^16.0.0",
     "pg": "^8.13.0",
     "react": "^19.0.0",

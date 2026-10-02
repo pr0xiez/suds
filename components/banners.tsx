@@ -1,8 +1,14 @@
+import { CheckCircleIcon, WarningCircleIcon } from '@phosphor-icons/react/ssr'
+
 export function ErrorBanner({ message }: { message?: string | null }) {
   if (!message) return null
   return (
-    <p className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
-      {message}
+    <p
+      role="alert"
+      className="mb-4 flex items-start gap-2 rounded-control border border-danger-line bg-danger-soft px-3 py-2.5 text-sm text-danger"
+    >
+      <WarningCircleIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+      <span>{message}</span>
     </p>
   )
 }
@@ -10,8 +16,12 @@ export function ErrorBanner({ message }: { message?: string | null }) {
 export function SuccessBanner({ message }: { message?: string | null }) {
   if (!message) return null
   return (
-    <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-      {message}
+    <p
+      role="status"
+      className="mb-4 flex items-start gap-2 rounded-control border border-ok-line bg-ok-soft px-3 py-2.5 text-sm text-ok"
+    >
+      <CheckCircleIcon aria-hidden className="mt-0.5 size-4 shrink-0" />
+      <span>{message}</span>
     </p>
   )
 }

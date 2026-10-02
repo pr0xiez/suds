@@ -1,6 +1,7 @@
+import { CaretLeftIcon, CaretRightIcon, PlusIcon } from '@phosphor-icons/react/ssr'
 import clsx from 'clsx'
 import Link from 'next/link'
-import { btnPrimary, btnSecondary, Card, JOB_STATUS_META } from '@/components/ui'
+import { btnPrimary, Card, JOB_STATUS_META, PageHeader, type Tone } from '@/components/ui'
 import { requireUser } from '@/lib/auth/session'
 import { assignLanes, hourLabel, spanToPct, windowHours } from '@/lib/calendar'
 import {
@@ -17,12 +18,28 @@ import {
   todayWall,
 } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
+import type { JobStatus } from '@/lib/generated/prisma/enums'
 import { getSettings } from '@/lib/ops/settings'
 
 export const metadata = { title: 'Schedule' }
 
 const HOUR_PX = 56
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const GRID_COLUMNS = '3.5rem repeat(7, minmax(0, 1fr))'
+
+/** Legend swatches: the same tone as each status's calendar block edge. */
+const TONE_DOT: Record<Tone, string> = {
+  neutral: 'bg-line-strong',
+  info: 'bg-info',
+  warn: 'bg-warn',
+  ok: 'bg-ok',
+  danger: 'bg-danger',
+  accent: 'bg-accent-ink',
+}
+const LEGEND: JobStatus[] = ['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELED', 'NO_SHOW']
+
+const navButton =
+  'inline-flex min-h-10 items-center justify-center text-sm font-medium text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink'
 
 export default async function SchedulePage({
   searchParams,
@@ -62,77 +79,108 @@ export default async function SchedulePage({
 
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Schedule</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {formatWallDate(firstDay)} –{' '}
+      <PageHeader
+        title="Schedule"
+        subtitle={
+          <span className="tabular-nums">
+            {formatWallDate(firstDay)}-
             {formatWallDate(lastDay, {
               month: 'short',
               day: 'numeric',
               year: 'numeric',
             })}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/schedule?week=${dateKey(addDays(weekStart, -7))}`} className={btnSecondary}>
-            ← Prev
-          </Link>
-          <Link href="/schedule" className={btnSecondary}>
-            Today
-          </Link>
-          <Link href={`/schedule?week=${dateKey(addDays(weekStart, 7))}`} className={btnSecondary}>
-            Next →
-          </Link>
-          <Link href="/jobs/new" className={btnPrimary}>
-            + New job
-          </Link>
-        </div>
-      </div>
+          </span>
+        }
+        actions={
+          <>
+            <nav
+              aria-label="Week"
+              className="inline-flex items-stretch overflow-hidden rounded-control border border-line-strong/70 bg-surface shadow-panel"
+            >
+              <Link
+                href={`/schedule?week=${dateKey(addDays(weekStart, -7))}`}
+                aria-label="Previous week"
+                title="Previous week"
+                className={clsx(navButton, 'w-10')}
+              >
+                <CaretLeftIcon aria-hidden className="size-4" />
+              </Link>
+              <Link
+                href="/schedule"
+                className={clsx(navButton, 'border-x border-line px-3.5 text-ink')}
+              >
+                Today
+              </Link>
+              <Link
+                href={`/schedule?week=${dateKey(addDays(weekStart, 7))}`}
+                aria-label="Next week"
+                title="Next week"
+                className={clsx(navButton, 'w-10')}
+              >
+                <CaretRightIcon aria-hidden className="size-4" />
+              </Link>
+            </nav>
+            <Link href="/jobs/new" className={btnPrimary}>
+              <PlusIcon aria-hidden />
+              New job
+            </Link>
+          </>
+        }
+      />
 
-      <Card padded={false}>
+      <Card padded={false} className="overflow-hidden">
         <div className="overflow-x-auto">
           <div className="min-w-[900px]">
             {/* Day headers */}
             <div
-              className="grid border-b border-slate-200"
-              style={{ gridTemplateColumns: '3.5rem repeat(7, 1fr)' }}
+              className="grid border-b border-line"
+              style={{ gridTemplateColumns: GRID_COLUMNS }}
             >
-              <div />
+              <div className="sticky left-0 z-20 border-r border-line bg-surface" />
               {days.map((day, i) => {
                 const isToday = isSameWallDate(day, today)
                 return (
                   <div
                     key={dateKey(day)}
+                    aria-current={isToday ? 'date' : undefined}
                     className={clsx(
-                      'border-l border-slate-100 px-2 py-2 text-center',
-                      isToday && 'bg-cyan-50',
+                      'flex flex-col items-center gap-1 px-2 py-2.5',
+                      i > 0 && 'border-l border-line',
+                      isToday && 'bg-accent-soft/40',
                     )}
                   >
-                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {WEEKDAY_LABELS[i]}
-                    </p>
-                    <p
+                    <span
                       className={clsx(
-                        'text-lg font-bold tabular-nums',
-                        isToday ? 'text-cyan-700' : 'text-slate-800',
+                        'text-xs font-medium',
+                        isToday ? 'text-ink' : 'text-ink-muted',
+                      )}
+                    >
+                      {WEEKDAY_LABELS[i]}
+                    </span>
+                    <span
+                      className={clsx(
+                        'grid size-8 place-items-center rounded-full text-base font-semibold tabular-nums',
+                        isToday ? 'bg-accent text-on-accent' : 'text-ink',
                       )}
                     >
                       {day.day}
-                    </p>
+                    </span>
                   </div>
                 )
               })}
             </div>
 
             {/* Time grid */}
-            <div className="grid" style={{ gridTemplateColumns: '3.5rem repeat(7, 1fr)' }}>
-              {/* Hour gutter */}
-              <div className="relative" style={{ height: colHeight }}>
+            <div className="grid" style={{ gridTemplateColumns: GRID_COLUMNS }}>
+              {/* Hour gutter: stays put while the week scrolls sideways on a phone */}
+              <div
+                className="sticky left-0 z-20 border-r border-line bg-surface"
+                style={{ height: colHeight }}
+              >
                 {hours.map((hour, i) => (
                   <span
                     key={hour}
-                    className="absolute right-2 -translate-y-1/2 text-[10px] font-medium text-slate-400"
+                    className="absolute right-2 -translate-y-1/2 whitespace-nowrap text-[11px] font-medium tabular-nums text-ink-faint"
                     style={{ top: i * HOUR_PX }}
                   >
                     {i === 0 ? '' : hourLabel(hour)}
@@ -140,7 +188,7 @@ export default async function SchedulePage({
                 ))}
               </div>
 
-              {days.map((day) => {
+              {days.map((day, dayIndex) => {
                 const dayKey = dateKey(day)
                 const dayJobs = byDay.get(dayKey) ?? []
                 const positioned = assignLanes(
@@ -154,8 +202,9 @@ export default async function SchedulePage({
                   <div
                     key={dayKey}
                     className={clsx(
-                      'relative border-l border-slate-100',
-                      isToday && 'bg-cyan-50/40',
+                      'relative',
+                      dayIndex > 0 && 'border-l border-line',
+                      isToday && 'bg-accent-soft/25',
                     )}
                     style={{ height: colHeight }}
                   >
@@ -165,9 +214,22 @@ export default async function SchedulePage({
                         key={hour}
                         href={`/jobs/new?at=${dayKey}T${String(hour).padStart(2, '0')}:00`}
                         title={`New job ${formatWallDate(day)} at ${hourLabel(hour)}`}
-                        className="absolute inset-x-0 border-t border-slate-100 hover:bg-cyan-100/40"
+                        aria-label={`New job ${formatWallDate(day)} at ${hourLabel(hour)}`}
+                        className={clsx(
+                          'group absolute inset-x-0 flex items-start justify-end p-1.5 transition-colors hover:bg-surface-2',
+                          i > 0 && 'border-t border-line',
+                        )}
                         style={{ top: i * HOUR_PX, height: HOUR_PX }}
-                      />
+                      >
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-line/70"
+                        />
+                        <PlusIcon
+                          aria-hidden
+                          className="relative size-3.5 text-ink-faint opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                        />
+                      </Link>
                     ))}
 
                     {positioned.map(({ item, lane, lanes }) => {
@@ -177,8 +239,9 @@ export default async function SchedulePage({
                         <Link
                           key={item.job.id}
                           href={`/jobs/${item.job.id}`}
+                          title={`${formatTime(item.job.scheduledAt, tz)}, ${item.job.customer.name}: ${meta.label}`}
                           className={clsx(
-                            'absolute z-10 overflow-hidden rounded-md border-l-4 px-1.5 py-1 text-[11px] leading-tight shadow-sm',
+                            'absolute z-10 overflow-hidden rounded-tight border-l-[3px] px-1.5 py-1 text-[11px] leading-snug shadow-panel transition-colors',
                             meta.chip,
                           )}
                           style={{
@@ -188,13 +251,16 @@ export default async function SchedulePage({
                             width: `calc(${100 / lanes}% - 4px)`,
                           }}
                         >
-                          <span className="block font-semibold">
+                          <span className="block font-semibold tabular-nums">
                             {formatTime(item.job.scheduledAt, tz)}
                           </span>
-                          <span className="block truncate">{item.job.customer.name}</span>
-                          <span className="block truncate opacity-75">
+                          <span className="block truncate font-medium">
+                            {item.job.customer.name}
+                          </span>
+                          <span className="block truncate text-ink-muted">
                             {item.job.vehicle.make} {item.job.vehicle.model}
                           </span>
+                          <span className="sr-only">, {meta.label}</span>
                         </Link>
                       )
                     })}
@@ -205,9 +271,23 @@ export default async function SchedulePage({
           </div>
         </div>
       </Card>
-      <p className="mt-3 text-xs text-slate-400">
-        Click an empty slot to book it. Jobs outside 7 AM–8 PM clamp to the edge of the grid.
-      </p>
+
+      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <p className="min-w-0 text-xs text-ink-muted">
+          Click an empty slot to book it. Jobs outside 7 AM-8 PM clamp to the edge of the grid.
+        </p>
+        <ul aria-label="Status colors" className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          {LEGEND.map((status) => (
+            <li key={status} className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
+              <span
+                aria-hidden
+                className={clsx('size-2 rounded-full', TONE_DOT[JOB_STATUS_META[status].tone])}
+              />
+              {JOB_STATUS_META[status].label}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   )
 }

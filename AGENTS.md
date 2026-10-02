@@ -101,7 +101,8 @@ must preserve existing IDs, jobs, payments, invoices, and photo relationships.
 - `lib/readiness.ts`, `observability.ts`, `instrumentation.ts`: setup diagnostics
   and structured failure logs without customer data or secret values.
 - `prisma`: append-only migrations; `scripts`: checks, worker, backup; `docs`:
-  scope, deployment, storage, and the standalone interactive concept.
+  architecture diagrams (`docs/architecture.md`), scope, deployment, storage, and
+  the standalone interactive concept.
 
 ## Coding and behavior
 

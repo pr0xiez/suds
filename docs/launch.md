@@ -29,7 +29,18 @@ is `alex@ahall.tech`; R2 is enabled and private production/preview buckets are
 created with exact-origin CORS and one-day pending-upload cleanup. A production
 token limited to object read/write on `suds-media-production` supplies the S3
 credentials in Vercel; its CORS origin is `https://suds.ahall.tech`. A real
-browser upload and the legacy photo copy have not been exercised yet.
+browser upload has not been exercised yet.
+
+The 12 legacy `suds-legacy` photos were generated seed placeholders, not job
+photos. On October 3, 2026 they were replaced in place: same row IDs, jobs, kinds,
+and post links, with new 1600x1200 JPEGs in private R2 under
+`business/suds-legacy/media/`. Each "after" image is a lightly graded real photo.
+Its "before" is the same frame with simulated grime, mud, or pet hair. The source
+photos are public domain or CC0 on Wikimedia Commons: Tesla Model 3 (48692714883)
+and Tesla Model 3 Premium 2023 (5); '16 Chevrolet Corvette Z06 Convertible (Gibeau
+Orange Julep 2018); '18 Ford F-150 XLT; Ford Mustang GT (G5 WAK) engine, 7 June
+2026. The visible license plate was blurred. None of these photos is approved for
+marketing.
 Transactional email and the paid AI providers also need credentials. Deployment
 and live service checks are recorded in [verification.md](verification.md).
 

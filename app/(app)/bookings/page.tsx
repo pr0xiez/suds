@@ -10,6 +10,7 @@ import {
 import Link from 'next/link'
 import { decideBookingAction } from '@/app/actions/bookings'
 import { ErrorBanner } from '@/components/banners'
+import { ConfirmSubmit } from '@/components/ConfirmSubmit'
 import {
   Badge,
   btnDanger,
@@ -170,15 +171,14 @@ export default async function BookingRequestsPage({
                       </form>
                       <form action={decideBookingAction} className="flex-1 sm:flex-none">
                         <input name="id" type="hidden" value={booking.id} />
-                        <button
-                          type="submit"
-                          name="decision"
-                          value="decline"
+                        <input name="decision" type="hidden" value="decline" />
+                        <ConfirmSubmit
+                          message={`Decline ${booking.customer.name}'s request for ${formatDateTime(booking.scheduledAt, settings.timezone)}? They will be emailed, and this can't be undone.`}
                           className={`${btnDanger} w-full`}
                         >
                           <XIcon aria-hidden />
                           Decline
-                        </button>
+                        </ConfirmSubmit>
                       </form>
                     </div>
                   ) : (

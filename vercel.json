@@ -1,5 +1,19 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["iad1"],
-  "crons": [{ "path": "/api/internal/worker", "schedule": "* * * * *" }]
+  "crons": [{ "path": "/api/internal/worker", "schedule": "* * * * *" }],
+  "redirects": [
+    {
+      "source": "/((?!api/internal/worker).*)",
+      "has": [{ "type": "host", "value": "suds-five.vercel.app" }],
+      "destination": "https://suds.ahall.tech/$1",
+      "permanent": true
+    },
+    {
+      "source": "/((?!api/internal/worker).*)",
+      "has": [{ "type": "host", "value": "suds-hall3aducgmailcoms-projects.vercel.app" }],
+      "destination": "https://suds.ahall.tech/$1",
+      "permanent": true
+    }
+  ]
 }

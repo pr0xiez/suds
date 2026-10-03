@@ -3,7 +3,7 @@
 The launch implementation is present in the repository. The existing private
 GitHub repo is `pr0xiez/suds`, with `main` linked to Vercel's `suds` project under
 `hall3aducgmailcoms-projects`. The production origin is
-`https://suds-hall3aducgmailcoms-projects.vercel.app`.
+`https://suds.ahall.tech`; the `ahall.tech` zone uses Vercel DNS in the same team.
 
 On September 30, 2026, the business-launch migration was rehearsed on Neon branch
 `suds-launch-rehearsal-20260930`, including all three smoke suites and a digest

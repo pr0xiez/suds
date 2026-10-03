@@ -5,6 +5,7 @@ import {
   DotsThreeOutlineIcon,
   GearSixIcon,
   ImagesIcon,
+  LifebuoyIcon,
   MegaphoneIcon,
   PlusIcon,
   SignOutIcon,
@@ -17,6 +18,7 @@ import {
 import Link from 'next/link'
 import { Logo } from '@/components/Logo'
 import { MoreSheet, NavLink } from '@/components/NavLink'
+import { SUPPORT_MAILTO } from '@/lib/support'
 
 type NavItem = {
   href: string
@@ -229,7 +231,7 @@ function AccountBlock({ user }: { user: { name: string; email: string } }) {
           <p className="truncate text-xs text-chrome-muted">{user.email}</p>
         </div>
       </div>
-      <div className="mt-3 flex items-center gap-1">
+      <div className="mt-3 flex flex-wrap items-center gap-1">
         <Link
           href="/portal"
           className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-control px-2 text-xs text-chrome-muted transition-colors hover:bg-chrome-2 hover:text-chrome-ink"
@@ -237,6 +239,13 @@ function AccountBlock({ user }: { user: { name: string; email: string } }) {
           <UserCircleIcon aria-hidden className="size-4" />
           Customer portal
         </Link>
+        <a
+          href={SUPPORT_MAILTO}
+          className="inline-flex min-h-8 items-center gap-1.5 whitespace-nowrap rounded-control px-2 text-xs text-chrome-muted transition-colors hover:bg-chrome-2 hover:text-chrome-ink"
+        >
+          <LifebuoyIcon aria-hidden className="size-4" />
+          Support
+        </a>
         <form method="post" action="/api/logout">
           <button
             type="submit"

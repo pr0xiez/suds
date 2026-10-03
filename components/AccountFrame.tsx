@@ -2,6 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 import { Logo } from '@/components/Logo'
+import { SUPPORT_EMAIL, SUPPORT_MAILTO } from '@/lib/support'
 import polish from '@/public/landing/polish.jpg'
 
 /**
@@ -28,6 +29,15 @@ export function AccountFrame({
             <h1 className="font-display text-3xl font-bold leading-tight text-ink">{title}</h1>
             {subtitle ? <p className="mt-2 text-sm text-ink-muted">{subtitle}</p> : null}
             <div className="mt-8 space-y-5">{children}</div>
+            <p className="mt-10 text-xs text-ink-muted">
+              Need help?{' '}
+              <a
+                href={SUPPORT_MAILTO}
+                className="font-medium text-ink underline-offset-4 hover:underline"
+              >
+                Email {SUPPORT_EMAIL}
+              </a>
+            </p>
           </div>
         </div>
       </main>

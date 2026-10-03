@@ -29,7 +29,8 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
 
   const tz = settings.timezone
   const subtotal = sumCents(job.items)
-  const total = jobTotalCents(job)
+  // Same total as the customer's portal copy of this invoice: the tip rides on top.
+  const total = jobTotalCents(job) + job.tipCents
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -110,19 +111,27 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
             ))}
           </tbody>
           <tfoot>
+            {job.discountCents > 0 || job.tipCents > 0 ? (
+              <tr className="border-t border-line">
+                <td className="pt-3 text-ink-muted">Subtotal</td>
+                <td className="pt-3 text-right tabular-nums text-ink">{formatCents(subtotal)}</td>
+              </tr>
+            ) : null}
             {job.discountCents > 0 ? (
-              <>
-                <tr className="border-t border-line">
-                  <td className="pt-3 text-ink-muted">Subtotal</td>
-                  <td className="pt-3 text-right tabular-nums text-ink">{formatCents(subtotal)}</td>
-                </tr>
-                <tr>
-                  <td className="py-1.5 text-ink-muted">Discount</td>
-                  <td className="py-1.5 text-right tabular-nums text-ink-muted">
-                    −{formatCents(job.discountCents)}
-                  </td>
-                </tr>
-              </>
+              <tr>
+                <td className="py-1.5 text-ink-muted">Discount</td>
+                <td className="py-1.5 text-right tabular-nums text-ink-muted">
+                  −{formatCents(job.discountCents)}
+                </td>
+              </tr>
+            ) : null}
+            {job.tipCents > 0 ? (
+              <tr>
+                <td className="py-1.5 text-ink-muted">Tip</td>
+                <td className="py-1.5 text-right tabular-nums text-ink-muted">
+                  {formatCents(job.tipCents)}
+                </td>
+              </tr>
             ) : null}
             <tr className="border-t-2 border-ink">
               <td className="pt-3 text-base font-semibold text-ink">Total</td>

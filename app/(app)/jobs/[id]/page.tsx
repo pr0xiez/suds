@@ -6,6 +6,7 @@ import {
   CheckIcon,
   ClockIcon,
   EnvelopeSimpleIcon,
+  MapPinIcon,
   MegaphoneIcon,
   PencilSimpleIcon,
   PhoneIcon,
@@ -467,6 +468,32 @@ export default async function JobPage({
               </ul>
             ) : null}
           </Card>
+
+          {job.locationAddress || job.waterPowerNotes ? (
+            <Card title="Location">
+              <dl className="space-y-4 text-sm">
+                {job.locationAddress ? (
+                  <div className="min-w-0">
+                    <dt className="text-xs font-medium text-ink-muted">Address</dt>
+                    <dd className="mt-1.5 flex items-start gap-2 text-ink">
+                      <MapPinIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-faint" />
+                      <span className="min-w-0 whitespace-pre-wrap break-words">
+                        {job.locationAddress}
+                      </span>
+                    </dd>
+                  </div>
+                ) : null}
+                {job.waterPowerNotes ? (
+                  <div className="min-w-0">
+                    <dt className="text-xs font-medium text-ink-muted">Water, power and parking</dt>
+                    <dd className="mt-1.5 whitespace-pre-wrap break-words text-ink">
+                      {job.waterPowerNotes}
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            </Card>
+          ) : null}
 
           <Card
             title="Invoice"

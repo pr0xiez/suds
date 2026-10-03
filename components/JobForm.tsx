@@ -3,7 +3,7 @@
 import { CheckIcon, PlusIcon, WarningIcon, XIcon } from '@phosphor-icons/react/ssr'
 import clsx from 'clsx'
 import Link from 'next/link'
-import { useActionState, useState } from 'react'
+import { useState } from 'react'
 import { type FormState, saveJobAction } from '@/app/actions/jobs'
 import { ErrorBanner } from '@/components/banners'
 import {
@@ -18,6 +18,7 @@ import {
   selectClass,
   textareaClass,
 } from '@/components/ui'
+import { useActionForm } from '@/components/useActionForm'
 import { minutesToHuman } from '@/lib/dates'
 import { deriveDuration, type ServiceLine, serviceLines } from '@/lib/jobLines'
 import { formatCents, parseMoneyToCents } from '@/lib/money'
@@ -76,7 +77,7 @@ export function JobForm({
   services: JobFormService[]
   initial: JobFormInitial
 }) {
-  const [state, formAction, pending] = useActionState<FormState | null, FormData>(
+  const { state, formAction, pending, onSubmit } = useActionForm<FormState | null>(
     saveJobAction,
     null,
   )
@@ -124,7 +125,7 @@ export function JobForm({
   ].filter((group) => group.services.length > 0)
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form action={formAction} onSubmit={onSubmit} className="space-y-6">
       <input type="hidden" name="jobId" value={initial.jobId} />
       <input type="hidden" name="customLines" value={JSON.stringify(customLines)} />
       {/* A checkbox posts its service once; a service repeated on the job posts its extra copies. */}

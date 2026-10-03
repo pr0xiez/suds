@@ -2,11 +2,11 @@
 
 import { WarningCircleIcon } from '@phosphor-icons/react/ssr'
 import clsx from 'clsx'
-import { useActionState } from 'react'
 import type { BookingFormState } from '@/app/actions/bookings'
 
 import { bookingButton } from '@/components/bookingStyles'
 import { btnDanger } from '@/components/ui'
+import { useActionForm } from '@/components/useActionForm'
 
 const bookingDangerButton = clsx(btnDanger, 'min-h-11! px-5!')
 
@@ -29,11 +29,15 @@ export function BookingActionForm({
   /** Replaces the default submit button classes, e.g. btnPrimary on owner pages. */
   submitClassName?: string
 }) {
-  const [state, formAction, pending] = useActionState(action, { error: '' })
+  const { state, formAction, pending, formRef, onSubmit, succeeded } = useActionForm(
+    action,
+    { error: '' },
+    { resetOnSuccess: true },
+  )
   return (
-    <form action={formAction} className={className}>
+    <form ref={formRef} action={formAction} onSubmit={onSubmit} className={className}>
       {children}
-      {state.error ? (
+      {state.error && !succeeded ? (
         <p
           role="alert"
           className="flex items-start gap-2 rounded-control border border-danger-line bg-danger-soft px-3 py-2.5 text-sm text-danger"

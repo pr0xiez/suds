@@ -10,7 +10,7 @@ import {
 } from '@phosphor-icons/react/ssr'
 import clsx from 'clsx'
 import Link from 'next/link'
-import { useActionState, useState } from 'react'
+import { useState } from 'react'
 import { type FormState, savePostAction } from '@/app/actions/social'
 import { ErrorBanner } from '@/components/banners'
 import {
@@ -30,6 +30,7 @@ import {
   selectClass,
   textareaClass,
 } from '@/components/ui'
+import { useActionForm } from '@/components/useActionForm'
 import { CAPTION_MAX, renderCaptionTemplate, withHashtags } from '@/lib/captions'
 
 export interface ComposerPhoto {
@@ -69,7 +70,7 @@ export function PostComposer({
   hashtags: string
   initial: ComposerInitial
 }) {
-  const [state, formAction, pending] = useActionState<FormState | null, FormData>(
+  const { state, formAction, pending, onSubmit } = useActionForm<FormState | null>(
     savePostAction,
     null,
   )
@@ -99,7 +100,7 @@ export function PostComposer({
   const overLimit = caption.length > CAPTION_MAX
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form action={formAction} onSubmit={onSubmit} className="space-y-6">
       <p className="flex items-start gap-2 text-sm text-ink-muted">
         <FilmSlateIcon aria-hidden className="mt-0.5 size-4 shrink-0 text-ink-faint" />
         <span className="min-w-0">

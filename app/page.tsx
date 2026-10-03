@@ -6,6 +6,7 @@ import { Logo, LogoMark } from '@/components/Logo'
 import { btnAccent, btnPrimary, btnSecondary, linkClass } from '@/components/ui'
 import { getSessionUser } from '@/lib/auth/session'
 import { businessUserFor } from '@/lib/business'
+import { SUPPORT_MAILTO } from '@/lib/support'
 import hero from '@/public/landing/hero.jpg'
 import interior from '@/public/landing/interior.jpg'
 import polish from '@/public/landing/polish.jpg'
@@ -184,13 +185,16 @@ export default async function Home() {
             <LogoMark className="size-5 text-accent-ink" />
             Suds
           </span>
-          <nav aria-label="Footer" className="flex gap-5">
+          <nav aria-label="Footer" className="flex flex-wrap gap-x-5 gap-y-2">
             <Link href="/login" className="hover:text-ink">
               Sign in
             </Link>
             <Link href="/signup?kind=CUSTOMER" className="hover:text-ink">
               Customer account
             </Link>
+            <a href={SUPPORT_MAILTO} className="hover:text-ink">
+              Support
+            </a>
           </nav>
         </div>
       </footer>

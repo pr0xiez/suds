@@ -1,9 +1,10 @@
-import { SignOutIcon, StorefrontIcon } from '@phosphor-icons/react/ssr'
+import { LifebuoyIcon, SignOutIcon, StorefrontIcon } from '@phosphor-icons/react/ssr'
 import clsx from 'clsx'
 import Link from 'next/link'
 import { Logo } from '@/components/Logo'
 import { btnGhost, btnSmall } from '@/components/ui'
 import { requirePortalUser } from '@/lib/bookingCustomer'
+import { SUPPORT_MAILTO } from '@/lib/support'
 
 /**
  * A layout cannot read the pathname, so each portal page marks its section with
@@ -52,6 +53,10 @@ export default async function PortalLayout({ children }: { children: React.React
             <StorefrontIcon aria-hidden />
             Start a detailing business
           </Link>
+          <a href={SUPPORT_MAILTO} className={tab}>
+            <LifebuoyIcon aria-hidden />
+            Support
+          </a>
         </nav>
       </header>
       <main className="mx-auto max-w-5xl px-4 pt-8 pb-16 sm:px-6 sm:pt-10">{children}</main>

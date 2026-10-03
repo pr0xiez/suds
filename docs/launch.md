@@ -26,8 +26,10 @@ supports the every-minute cron in `vercel.json`; builds never apply migrations.
 
 Cloudflare R2 Standard is selected for media. The authenticated Cloudflare account
 is `alex@ahall.tech`; R2 is enabled and private production/preview buckets are
-created with exact-origin CORS and one-day pending-upload cleanup. Bucket-scoped
-S3 credentials are still needed before the app can store or serve media.
+created with exact-origin CORS and one-day pending-upload cleanup. A production
+token limited to object read/write on `suds-media-production` supplies the S3
+credentials in Vercel; its CORS origin is `https://suds.ahall.tech`. A real
+browser upload and the legacy photo copy have not been exercised yet.
 Transactional email and the paid AI providers also need credentials. Deployment
 and live service checks are recorded in [verification.md](verification.md).
 

@@ -41,7 +41,7 @@ signup while verified customers can still register from a booking page.
 | Postgres/Neon | pooled DATABASE_URL, unpooled DIRECT_URL | health endpoint and migration preview |
 | Public origin | PUBLIC_APP_URL, HTTPS origin without a path | verification and booking links |
 | Private R2/S3 | STORAGE_DRIVER=s3, S3_ENDPOINT, S3_BUCKET, S3_REGION, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY | browser PUT, finalize, preview, delete |
-| Transactional email | EMAIL_PROVIDER_URL, EMAIL_PROVIDER_TOKEN, EMAIL_FROM | verified sender, token email, booking receipt |
+| Transactional email | EMAIL_PROVIDER_URL, EMAIL_PROVIDER_TOKEN, EMAIL_FROM; EMAIL_REDIRECT_TO on previews | verified sender, token email, booking receipt |
 | Worker | CRON_SECRET, at least 32 random characters | authenticated scheduled tick or persistent process |
 | Hosted marketing | OPENAI_API_KEY, explicit supported MARKETING_MODEL | prepare, edit, review, save campaign |
 | Uploaded video edits | SUBMAGIC_API_KEY | approved clip submit, progress, durable result |

@@ -92,6 +92,27 @@ describe('notification delivery', () => {
     })
   })
 
+  it('sends every message to the redirect inbox, naming the intended recipient', async () => {
+    vi.stubEnv('EMAIL_REDIRECT_TO', 'preview@example.test')
+    const fetch = vi.fn(async (_url: URL, _init: RequestInit) => new Response('{}'))
+    vi.stubGlobal('fetch', fetch)
+    await expect(processNotificationOutbox(1)).resolves.toEqual({ sent: 1, failed: 0 })
+    const body = JSON.parse(String(fetch.mock.calls[0]?.[1].body))
+    expect(body.to).toEqual(['preview@example.test'])
+    expect(body.subject).toBe(`[to ${row.to}] ${row.subject}`)
+  })
+
+  it('never sends from a Vercel preview without a redirect inbox', async () => {
+    vi.stubEnv('VERCEL_ENV', 'preview')
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    await expect(processNotificationOutbox(1)).resolves.toEqual({ sent: 0, failed: 0 })
+    vi.stubEnv('EMAIL_REDIRECT_TO', 'not an address')
+    await expect(processNotificationOutbox(1)).resolves.toEqual({ sent: 0, failed: 0 })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(db.tx.notificationOutbox.update).not.toHaveBeenCalled()
+  })
+
   it('returns a failed send to the queue for a retry', async () => {
     vi.stubGlobal(
       'fetch',

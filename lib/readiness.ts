@@ -42,6 +42,7 @@ export function launchReadiness(
       ready:
         value('EMAIL_PROVIDER_TOKEN') &&
         value('EMAIL_FROM') &&
+        (env.VERCEL_ENV !== 'preview' || value('EMAIL_REDIRECT_TO')) &&
         (() => {
           try {
             return new URL(env.EMAIL_PROVIDER_URL ?? '').protocol === 'https:'

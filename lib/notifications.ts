@@ -41,6 +41,18 @@ export function publicAppUrl(): URL {
   return url
 }
 
+/**
+ * EMAIL_REDIRECT_TO sends every message to one inbox, with the intended recipient
+ * moved into the subject, so a preview running on fixture data cannot reach a real
+ * customer. Vercel previews refuse to send without it. Undefined means normal
+ * delivery; null means nothing may be sent.
+ */
+export function emailRedirect(): string | null | undefined {
+  const value = process.env.EMAIL_REDIRECT_TO?.trim()
+  if (value) return /^[^\s@,<>]+@[^\s@,<>]+\.[^\s@,<>]+$/.test(value) ? value : null
+  return process.env.VERCEL_ENV === 'preview' ? null : undefined
+}
+
 /** Resend-compatible HTTP adapter; never invoked by a page request. */
 export async function processNotificationOutbox(
   limit = 10,
@@ -48,7 +60,8 @@ export async function processNotificationOutbox(
   const endpoint = process.env.EMAIL_PROVIDER_URL
   const token = process.env.EMAIL_PROVIDER_TOKEN
   const from = process.env.EMAIL_FROM
-  if (!endpoint || !token || !from) return { sent: 0, failed: 0 }
+  const redirect = emailRedirect()
+  if (!endpoint || !token || !from || redirect === null) return { sent: 0, failed: 0 }
   const url = new URL(endpoint)
   if (url.protocol !== 'https:' || url.username || url.password)
     throw new Error('EMAIL_PROVIDER_URL must use HTTPS')
@@ -141,7 +154,12 @@ export async function processNotificationOutbox(
           'Content-Type': 'application/json',
           'Idempotency-Key': row.dedupeKey,
         },
-        body: JSON.stringify({ from, to: [row.to], subject: row.subject, text: row.text }),
+        body: JSON.stringify({
+          from,
+          to: [redirect ?? row.to],
+          subject: redirect ? `[to ${row.to}] ${row.subject}` : row.subject,
+          text: row.text,
+        }),
         signal: AbortSignal.timeout(15_000),
       })
       if (!res.ok) throw new Error(`Email provider returned HTTP ${res.status}`)

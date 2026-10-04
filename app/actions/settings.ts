@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
+import { consumeRateLimit } from '@/lib/auth/persistentRateLimit'
 import { requireOwner, requireUser } from '@/lib/auth/session'
 import { fdString, friendlyError } from '@/lib/forms'
 import { parseMoneyToCents } from '@/lib/money'
@@ -63,6 +64,8 @@ function readService(fd: FormData) {
   const name = fdString(fd, 'name').trim()
   if (!name) throw new Error('Name is required')
   const sort = Number(fdString(fd, 'sort') || '0')
+  if (!Number.isInteger(sort) || sort < 0 || sort > 10_000)
+    throw new Error('Order must be a whole number between 0 and 10000')
   return {
     name: name.slice(0, 200),
     description: fdString(fd, 'description').trim().slice(0, 2000),
@@ -161,14 +164,17 @@ async function runUsersMutation(mutate: () => Promise<unknown>): Promise<void> {
 
 export async function createUserAction(fd: FormData): Promise<void> {
   const user = await requireOwner()
-  await runUsersMutation(() =>
-    createUser(user.businessId, {
+  await runUsersMutation(async () => {
+    // Each invitation emails an address the owner typed; bound it per business.
+    if (!(await consumeRateLimit(`invite:${user.businessId}`, 20, 24 * 60 * 60_000)))
+      throw new Error('Too many invitations today. Try again tomorrow.')
+    return createUser(user.businessId, {
       email: z.email('Enter a valid email').parse(fdString(fd, 'email').trim()),
       name: fdString(fd, 'name').trim() || fdString(fd, 'email').trim(),
       password: fdString(fd, 'password'),
       role: z.enum(ROLES).parse(fdString(fd, 'role')),
-    }),
-  )
+    })
+  })
 }
 
 export async function setUserActiveAction(fd: FormData): Promise<void> {
@@ -187,5 +193,10 @@ export async function setUserRoleAction(fd: FormData): Promise<void> {
 
 export async function resetUserPasswordAction(fd: FormData): Promise<void> {
   const user = await requireOwner()
-  await runUsersMutation(() => resetUserPassword(user.businessId, fdString(fd, 'id')))
+  await runUsersMutation(async () => {
+    const id = fdString(fd, 'id')
+    if (!(await consumeRateLimit(`member-recovery:${user.businessId}:${id}`, 3, 60 * 60_000)))
+      throw new Error('A recovery email was sent recently. Wait an hour before sending another.')
+    return resetUserPassword(user.businessId, id)
+  })
 }

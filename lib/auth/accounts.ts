@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { type AuthErrorCode, AuthFormError } from '@/lib/auth/formErrors'
 import { hashPassword } from '@/lib/auth/password'
 import { safeAuthNext } from '@/lib/business'
@@ -32,6 +32,12 @@ export type RegistrationInput = {
   signupCode?: string
 }
 
+/** Digests make the comparison constant-time whatever length was typed. */
+function signupCodeMatches(typed: string | undefined): boolean {
+  const digest = (value: string) => createHash('sha256').update(value).digest()
+  return timingSafeEqual(digest(typed ?? ''), digest(process.env.SIGNUP_CODE ?? ''))
+}
+
 /** Every field problem at once, in form order, so one submit reports them all. */
 export function registrationProblems(input: RegistrationInput): AuthErrorCode[] {
   const problems: AuthErrorCode[] = []
@@ -39,11 +45,7 @@ export function registrationProblems(input: RegistrationInput): AuthErrorCode[] 
   if (input.kind === 'OWNER' && !input.businessName?.trim()) problems.push('business_name')
   if (!validEmail(input.email.trim().toLowerCase())) problems.push('email')
   if (!validPasswordLength(input.password)) problems.push('password_length')
-  if (
-    input.kind === 'OWNER' &&
-    process.env.SIGNUP_CODE &&
-    input.signupCode !== process.env.SIGNUP_CODE
-  )
+  if (input.kind === 'OWNER' && process.env.SIGNUP_CODE && !signupCodeMatches(input.signupCode))
     problems.push('signup_code')
   return problems
 }
@@ -156,11 +158,19 @@ export async function resendVerification(userId: string, next?: string): Promise
   )
 }
 
-/** Compare-and-set consumption and account change share one transaction. */
+/**
+ * Compare-and-set consumption and account change share one transaction.
+ *
+ * Anyone can register an address they do not own, so a click from the inbox
+ * alone must not verify a password somebody else chose. Web callers pass the
+ * signed-in identity (or null); a VERIFY_EMAIL link then only confirms for the
+ * account that holds its password. The real owner of the inbox recovers instead.
+ */
 export async function consumeAccountToken(
   raw: string,
   password?: string,
   flow: 'VERIFY' | 'RESET' = 'VERIFY',
+  sessionUserId?: string | null,
 ) {
   if (!/^[A-Za-z0-9_-]{43}$/.test(raw)) throw new AuthFormError('link_invalid')
   if (password) validateNewPassword(password)
@@ -182,6 +192,12 @@ export async function consumeAccountToken(
     }
     if ((flow === 'RESET') !== (token.purpose === 'RESET_PASSWORD'))
       throw new AuthFormError('link_wrong_flow')
+    if (
+      token.purpose === 'VERIFY_EMAIL' &&
+      sessionUserId !== undefined &&
+      sessionUserId !== token.userId
+    )
+      throw new AuthFormError('sign_in_first')
     if (token.purpose === 'RESET_PASSWORD' && !passwordHash)
       throw new AuthFormError('password_required')
     if (
@@ -333,8 +349,7 @@ export async function createBusinessForUser(
   const problems: AuthErrorCode[] = []
   const name = businessName.trim().slice(0, 120)
   if (!name) problems.push('business_name')
-  if (process.env.SIGNUP_CODE && signupCode !== process.env.SIGNUP_CODE)
-    problems.push('signup_code')
+  if (process.env.SIGNUP_CODE && !signupCodeMatches(signupCode)) problems.push('signup_code')
   const [problem, ...more] = problems
   if (problem) throw new AuthFormError(problem, ...more)
   const base =

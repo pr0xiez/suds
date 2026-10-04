@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { enqueueVideo, presentRun, UsageLimitError } from '@/lib/ai/runs'
 import { getBusinessSessionUser } from '@/lib/auth/session'
 import { prisma } from '@/lib/db/client'
+import { userFacingError } from '@/lib/forms'
 import { sameOriginOk } from '@/lib/http'
 import { readMediaJson } from '@/lib/media/api'
 export const runtime = 'nodejs'
@@ -22,7 +23,7 @@ export async function POST(req: NextRequest) {
     )
   } catch (err) {
     return json(
-      { error: err instanceof Error ? err.message : 'Could not queue the edit.' },
+      { error: userFacingError(err, 'Could not queue the edit.') },
       err instanceof UsageLimitError ? 429 : 400,
     )
   }

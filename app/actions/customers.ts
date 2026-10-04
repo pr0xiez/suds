@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
 import { inviteCustomerPortal } from '@/lib/auth/accounts'
+import { consumeRateLimit } from '@/lib/auth/persistentRateLimit'
 import { requireOwner, requireUser } from '@/lib/auth/session'
 import { fdString, friendlyError } from '@/lib/forms'
 import {
@@ -122,6 +123,8 @@ export async function inviteCustomerPortalAction(fd: FormData): Promise<void> {
   const id = fdString(fd, 'id')
   let error: string | null = null
   try {
+    if (!(await consumeRateLimit(`customer-invite:${user.businessId}`, 60, 24 * 60 * 60_000)))
+      throw new Error('Too many portal invitations today. Try again tomorrow.')
     await inviteCustomerPortal(user.businessId, id)
   } catch (err) {
     error = friendlyError(err)

@@ -1,14 +1,13 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { AuthFormError } from '@/lib/auth/formErrors'
 import { consumeRateLimit } from '@/lib/auth/persistentRateLimit'
-import { sameOriginOk } from '@/lib/http'
+import { clientIp, declaredBodyWithin, sameOriginOk } from '@/lib/http'
 
 export async function authForm(req: NextRequest, action: string, max = 8): Promise<FormData> {
   if (!sameOriginOk(req)) throw new AuthFormError('origin')
-  const length = Number(req.headers.get('content-length') ?? 0)
-  if (length > 16_384) throw new AuthFormError('too_large')
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local'
-  if (!(await consumeRateLimit(`auth:${action}:${ip}`, max))) throw new AuthFormError('rate')
+  if (!declaredBodyWithin(req, 16_384)) throw new AuthFormError('too_large')
+  if (!(await consumeRateLimit(`auth:${action}:${clientIp(req)}`, max)))
+    throw new AuthFormError('rate')
   return req.formData()
 }
 

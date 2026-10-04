@@ -65,6 +65,12 @@ export async function deleteCustomer(businessId: string, id: string): Promise<{ 
   if (jobCount > 0) {
     return { error: `Customer has ${jobCount} job(s). Delete those first.` }
   }
+  const bookingCount = await prisma.booking.count({ where: { businessId, customerId: id } })
+  if (bookingCount > 0) {
+    return {
+      error: `Customer has ${bookingCount} booking request(s) on record and cannot be deleted.`,
+    }
+  }
   await prisma.customer.delete({ where: { businessId_id: { businessId, id } } })
   return {}
 }

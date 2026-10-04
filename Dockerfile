@@ -4,6 +4,10 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
+# The media origin is baked into the Content-Security-Policy at build time. It is
+# an origin, not a credential; without it the browser blocks private media.
+ARG S3_ENDPOINT=""
+ENV S3_ENDPOINT=$S3_ENDPOINT
 # Prisma generation needs a syntactically valid URL, not a live database.
 RUN DIRECT_URL=postgresql://build:build@localhost:5432/build DATABASE_URL=postgresql://build:build@localhost:5432/build npm run build
 

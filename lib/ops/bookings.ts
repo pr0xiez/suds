@@ -199,6 +199,20 @@ export async function queueBookingNotice(
   }
 }
 
+// Owner pages list a customer's vehicles in full, and a pending request holds no
+// time, so what one self-service account can pile up is capped.
+const MAX_CUSTOMER_VEHICLES = 25
+const MAX_OPEN_BOOKINGS = 10
+
+export async function assertVehicleRoom(
+  db: Prisma.TransactionClient | typeof prisma,
+  businessId: string,
+  customerId: string,
+) {
+  if ((await db.vehicle.count({ where: { businessId, customerId } })) >= MAX_CUSTOMER_VEHICLES)
+    throw new Error('You have reached the vehicle limit. Edit a saved vehicle instead.')
+}
+
 /** Typed email never links records. A verified signed-in identity owns the customer association. */
 export async function submitPublicBooking(userId: string, raw: PublicBookingInput) {
   const input = inputSchema.parse(raw)
@@ -225,6 +239,18 @@ export async function submitPublicBooking(userId: string, raw: PublicBookingInpu
           },
         })
         if (existing) return existing
+        const open = await tx.booking.count({
+          where: {
+            businessId: business.id,
+            customerId: customer.id,
+            status: { in: ['PENDING', 'CONFIRMED'] },
+            scheduledAt: { gt: new Date() },
+          },
+        })
+        if (open >= MAX_OPEN_BOOKINGS)
+          throw new Error(
+            'You already have several upcoming appointments here. Contact the business to book more.',
+          )
       }
       const services = await tx.service.findMany({
         where: { businessId: business.id, id: { in: input.serviceIds }, active: true },
@@ -272,6 +298,7 @@ export async function submitPublicBooking(userId: string, raw: PublicBookingInpu
         if (!vehicle) throw new Error('Choose one of your vehicles')
       } else {
         if (!input.make || !input.model) throw new Error('Enter your vehicle make and model')
+        await assertVehicleRoom(tx, business.id, customer.id)
         vehicle = await tx.vehicle.create({
           data: {
             businessId: business.id,

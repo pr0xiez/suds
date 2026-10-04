@@ -6,6 +6,7 @@ import { NewPasswordFields } from '@/components/NewPasswordFields'
 import { btnPrimary, linkClass } from '@/components/ui'
 import { tokenHash } from '@/lib/auth/accounts'
 import { authBannerMessage, readAuthErrors } from '@/lib/auth/formErrors'
+import { getSessionUser } from '@/lib/auth/session'
 import { safeAuthNext } from '@/lib/business'
 import { prisma } from '@/lib/db/client'
 
@@ -22,6 +23,7 @@ export default async function VerifyPage({
           where: { tokenHash: tokenHash(query.token) },
           select: {
             purpose: true,
+            userId: true,
             consumedAt: true,
             expiresAt: true,
             user: { select: { emailVerifiedAt: true } },
@@ -34,7 +36,10 @@ export default async function VerifyPage({
     valid &&
     ['MEMBERSHIP_INVITE', 'CUSTOMER_LINK'].includes(token.purpose) &&
     !token.user.emailVerifiedAt
-  const errors = readAuthErrors(query.error)
+  // Confirming a self-registered address needs the session that holds its password.
+  const needSignIn =
+    valid && token.purpose === 'VERIFY_EMAIL' && (await getSessionUser())?.id !== token.userId
+  const errors = readAuthErrors(needSignIn ? 'sign_in_first' : query.error)
   const banner =
     query.token && !valid
       ? 'This link is invalid, expired, or already used. Request another email or recover your account.'
@@ -52,7 +57,7 @@ export default async function VerifyPage({
       {query.sent ? (
         <SuccessBanner message="If your account needs verification, another email has been queued." />
       ) : null}
-      {valid ? (
+      {needSignIn ? null : valid ? (
         <form method="post" action="/api/auth/verify" className="space-y-5">
           <input type="hidden" name="token" value={query.token} />
           <input type="hidden" name="next" value={next} />

@@ -29,7 +29,9 @@ for customer actions. Every page, action, and API authenticates independently.
 
 Sessions and account capabilities store SHA-256 hashes, never raw bearer values.
 Account verification, password reset, staff invitations, and customer-history
-invitations have expiries and are consumed atomically once. Email scanners may
+invitations have expiries and are consumed atomically once. Anyone can register
+an address they do not own, so a self-signup verification link confirms only in
+a browser signed in to that account; the inbox owner recovers the account instead. Email scanners may
 open the confirmation page, but only POST consumes the token. Recovery revokes
 sessions. Invitations cannot reactivate revoked membership via an old link.
 Persistent database rate limits apply across app instances.

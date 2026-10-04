@@ -60,8 +60,11 @@ function readJobInput(fd: FormData, timezone: string): JobInput {
 
   const durationRaw = fdString(fd, 'durationMin').trim()
   const durationMin = durationRaw === '' ? null : Number(durationRaw)
-  if (durationMin !== null && (!Number.isInteger(durationMin) || durationMin < 15)) {
-    throw new Error('Duration override must be at least 15 minutes')
+  if (
+    durationMin !== null &&
+    (!Number.isInteger(durationMin) || durationMin < 15 || durationMin > 24 * 60)
+  ) {
+    throw new Error('Duration override must be between 15 and 1440 minutes')
   }
 
   const discountRaw = fdString(fd, 'discount').trim()

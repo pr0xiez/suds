@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getBusinessSessionUser } from '@/lib/auth/session'
+import { userFacingError } from '@/lib/forms'
 import { sameOriginOk } from '@/lib/http'
 import { readMediaJson } from '@/lib/media/api'
 import { prepareMediaUpload } from '@/lib/media/uploads'
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
     )
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not prepare the upload.' },
+      { error: userFacingError(err, 'Could not prepare the upload.') },
       { status: 400 },
     )
   }

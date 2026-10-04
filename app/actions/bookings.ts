@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
+import { consumeRateLimit } from '@/lib/auth/persistentRateLimit'
 import { requireOwner } from '@/lib/auth/session'
 import { parseBookingInstant } from '@/lib/bookingAvailability'
 import { requirePortalUser } from '@/lib/bookingCustomer'
@@ -10,6 +11,7 @@ import { parseDatetimeLocal, toDatetimeLocalValue } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
 import { fdString, friendlyError } from '@/lib/forms'
 import {
+  assertVehicleRoom,
   changeCustomerBooking,
   createAvailabilityBlock,
   decideBooking,
@@ -30,6 +32,9 @@ export async function bookAppointmentAction(
   const user = await requirePortalUser(`/b/${encodeURIComponent(slug)}`)
   let id: string
   try {
+    // Each attempt can email every owner; one account gets a modest hourly budget.
+    if (!(await consumeRateLimit(`booking:${user.id}`, 12, 60 * 60_000)))
+      throw new Error('Too many booking attempts. Wait an hour and try again.')
     const year = fdString(fd, 'year')
     const booking = await submitPublicBooking(user.id, {
       slug,
@@ -188,16 +193,20 @@ export async function savePortalVehicleAction(
       throw new Error('Enter a make, model and valid year')
     const data = { make, model, year, color: fdString(fd, 'color').trim().slice(0, 80) }
     const id = fdString(fd, 'id')
+    if (!(await consumeRateLimit(`portal-vehicle:${user.id}`, 30, 60 * 60_000)))
+      throw new Error('Too many vehicle changes. Wait an hour and try again.')
     if (id) {
       const result = await prisma.vehicle.updateMany({
         where: { id, businessId: customer.businessId, customerId: customer.id },
         data,
       })
       if (!result.count) throw new Error('Vehicle not found')
-    } else
+    } else {
+      await assertVehicleRoom(prisma, customer.businessId, customer.id)
       await prisma.vehicle.create({
         data: { ...data, businessId: customer.businessId, customerId: customer.id },
       })
+    }
   } catch (error) {
     return { error: friendlyError(error) }
   }

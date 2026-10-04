@@ -6,6 +6,7 @@ import {
 import { approvedPhotos, videoRunBrief } from '@/lib/ai/runs'
 import { prisma } from '@/lib/db/client'
 import { demoEnabled } from '@/lib/demo'
+import { userFacingError } from '@/lib/forms'
 import type { AiRun, Prisma } from '@/lib/generated/prisma/client'
 import { PILOT_STORAGE_BYTES, StorageLimitError, storedBusinessBytes } from '@/lib/media/usage'
 import { createPhotoShort, getPhotoShort } from '@/lib/ops/photoShorts'
@@ -252,7 +253,7 @@ async function processRun(run: AiRun) {
       !(err instanceof StorageLimitError) &&
       run.attempts < 30 &&
       run.createdAt.getTime() > Date.now() - 2 * 86400_000
-    const error = err instanceof Error ? err.message : 'The AI request could not be completed.'
+    const error = userFacingError(err, 'The AI request could not be completed.')
     await update(run, {
       status: uncertain ? 'UNCERTAIN' : retry ? 'PROCESSING' : 'FAILED',
       error: error.slice(0, 500),

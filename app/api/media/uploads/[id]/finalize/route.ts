@@ -1,6 +1,7 @@
 import { revalidatePath } from 'next/cache'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getBusinessSessionUser } from '@/lib/auth/session'
+import { userFacingError } from '@/lib/forms'
 import { sameOriginOk } from '@/lib/http'
 import { finalizeMediaUpload } from '@/lib/media/uploads'
 export const runtime = 'nodejs'
@@ -15,7 +16,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store' } })
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not finalize the upload.' },
+      { error: userFacingError(err, 'Could not finalize the upload.') },
       { status: 400 },
     )
   }

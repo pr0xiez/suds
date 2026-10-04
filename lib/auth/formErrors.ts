@@ -31,6 +31,10 @@ const AUTH_ERRORS = {
   link_wrong_flow: {
     message: 'This link is for a different step. Open the most recent email we sent you.',
   },
+  sign_in_first: {
+    message:
+      'Sign in with the password you chose, then open the link from your email again. If you did not create this account, recover it to set your own password.',
+  },
   unverified: { message: 'Verify your email before starting a business.' },
   unknown: { message: 'Something went wrong on our side. Try again in a moment.' },
 } as const satisfies Record<string, { field?: AuthErrorField; message: string }>

@@ -199,12 +199,16 @@ export async function finalizeMediaUpload(businessId: string, userId: string, id
     await deleteObject(upload.objectKey).catch(() => undefined)
     return { id: upload.id, kind: upload.kind, status: 'READY', photoId: photo?.id }
   } catch (err) {
-    await prisma.mediaUpload.updateMany({
+    const rejected = await prisma.mediaUpload.updateMany({
       where: { id, businessId, status: 'FINALIZING' },
       data: { status: 'REJECTED' },
     })
-    if (destination) await deleteObject(destination).catch(() => undefined)
-    await deleteObject(upload.objectKey).catch(() => undefined)
+    // A commit whose acknowledgement was lost left the row READY and its media
+    // record pointing at the accepted object: only a real rejection deletes it.
+    if (rejected.count === 1) {
+      if (destination) await deleteObject(destination).catch(() => undefined)
+      await deleteObject(upload.objectKey).catch(() => undefined)
+    }
     throw err
   }
 }

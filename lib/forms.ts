@@ -13,7 +13,13 @@ export function fdStrings(fd: FormData, key: string): string[] {
 
 /** Redirect targets that ride in hidden form fields must stay on-site. */
 export function safeBackPath(raw: string, fallback: string): string {
-  return raw.startsWith('/') && !raw.startsWith('//') ? raw : fallback
+  // Browsers read `/\host` and a path with an embedded tab or newline as `//host`.
+  const offSite =
+    !raw.startsWith('/') ||
+    raw.startsWith('//') ||
+    raw.includes('\\') ||
+    Array.from(raw).some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127)
+  return offSite ? fallback : raw
 }
 
 const fieldLabel = (key: PropertyKey) => {
@@ -50,9 +56,13 @@ function issueMessage(issue: z.core.$ZodIssue): string {
   return `${label} is not valid`
 }
 
+const GENERIC_ERROR = 'Something went wrong. Try again.'
+
 /**
- * Ops throw Errors with user-facing messages. Anything carrying a `code`
- * (Prisma request errors, Node errnos) is infrastructure — don't leak it.
+ * Ops throw plain Errors with user-facing messages. Anything carrying a `code`
+ * (Prisma request errors, Node errnos) or its own error class (Prisma
+ * validation or connection failures, SyntaxError, TypeError) is infrastructure
+ * and may name hosts or echo payloads; don't leak it.
  */
 export function friendlyError(err: unknown): string {
   if (err instanceof z.ZodError) {
@@ -62,6 +72,13 @@ export function friendlyError(err: unknown): string {
       .map((message) => (/[.!?]$/.test(message) ? message : `${message}.`))
     return messages.length ? messages.join(' ') : 'Check the form and try again.'
   }
-  if (err instanceof Error && !('code' in err) && err.message) return err.message
-  return 'Something went wrong. Try again.'
+  const deliberate = err instanceof Error && (err.name === 'Error' || err.name === 'AuthFormError')
+  if (deliberate && !('code' in err) && err.message) return err.message
+  return GENERIC_ERROR
+}
+
+/** friendlyError for JSON routes, which supply their own generic fallback. */
+export function userFacingError(err: unknown, fallback: string): string {
+  const message = friendlyError(err)
+  return message === GENERIC_ERROR ? fallback : message
 }

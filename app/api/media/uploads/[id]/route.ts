@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { getBusinessSessionUser } from '@/lib/auth/session'
 import { prisma } from '@/lib/db/client'
+import { userFacingError } from '@/lib/forms'
 import { sameOriginOk } from '@/lib/http'
 import { deleteObject } from '@/lib/storage'
 export const maxDuration = 60
@@ -51,8 +52,7 @@ export async function DELETE(req: NextRequest, ctx: { params: Promise<{ id: stri
   } catch (err) {
     return NextResponse.json(
       {
-        error:
-          err instanceof Error ? err.message : 'Could not delete the source. Cleanup will retry.',
+        error: userFacingError(err, 'Could not delete the source. Cleanup will retry.'),
       },
       { status: 409 },
     )

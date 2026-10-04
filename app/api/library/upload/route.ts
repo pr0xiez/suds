@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getBusinessSessionUser } from '@/lib/auth/session'
 import { friendlyError } from '@/lib/forms'
-import { sameOriginOk } from '@/lib/http'
+import { declaredBodyWithin, sameOriginOk } from '@/lib/http'
 import { addPhoto } from '@/lib/ops/photos'
 
 const KINDS = ['BEFORE', 'AFTER', 'OTHER'] as const
@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
 
   if (process.env.NODE_ENV === 'production')
     return new NextResponse('Use the direct media uploader.', { status: 400 })
-  if (Number(req.headers.get('content-length')) > 20 * 1024 * 1024)
+  if (!declaredBodyWithin(req, 20 * 1024 * 1024))
     return new NextResponse('Upload too large.', { status: 413 })
   const form = await req.formData()
   const kindParse = z.enum(KINDS).safeParse(form.get('kind'))

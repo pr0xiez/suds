@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { validateMarketingReview } from '@/lib/ai/marketingReview'
 import { getBusinessSessionUser } from '@/lib/auth/session'
 import { prisma } from '@/lib/db/client'
+import { userFacingError } from '@/lib/forms'
 import type { Prisma } from '@/lib/generated/prisma/client'
 import { sameOriginOk } from '@/lib/http'
 import { readMediaJson } from '@/lib/media/api'
@@ -40,7 +41,7 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ saved: true })
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not save this caption.' },
+      { error: userFacingError(err, 'Could not save this caption.') },
       { status: 400 },
     )
   }

@@ -47,6 +47,13 @@ signup while verified customers can still register from a booking page.
 | Uploaded video edits | SUBMAGIC_API_KEY | approved clip submit, progress, durable result |
 | Photo shorts | SHOTSTACK_API_KEY, SHOTSTACK_ENV | stage render first; v1 is production |
 
+Response headers, including the Content-Security-Policy, are fixed at build time.
+The policy allows media only from the application and the `S3_ENDPOINT` origin,
+so that variable must be present when building (Vercel build environment, or
+the Docker `S3_ENDPOINT` build argument). Rate limits read the client address
+from `X-Forwarded-For`; set `TRUSTED_PROXY_HOPS` when self-hosting behind more
+than one proxy of your own.
+
 `AI_MEDIA_ALLOWED_HOSTS` adds exact approved output hostnames if a provider uses
 an output host outside the built-in list. Do not use arbitrary user-provided URLs.
 Run `npm run preflight`; it reports connection names, never secret values. This

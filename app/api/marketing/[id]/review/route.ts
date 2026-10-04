@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { validateMarketingReview } from '@/lib/ai/marketingReview'
 import { getBusinessSessionUser } from '@/lib/auth/session'
 import { prisma } from '@/lib/db/client'
+import { userFacingError } from '@/lib/forms'
 import { sameOriginOk } from '@/lib/http'
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const user = await getBusinessSessionUser()
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
     })
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Could not verify this draft.' },
+      { error: userFacingError(err, 'Could not verify this draft.') },
       { status: 409 },
     )
   }

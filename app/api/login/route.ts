@@ -4,7 +4,7 @@ import { consumeRateLimit } from '@/lib/auth/persistentRateLimit'
 import { createSessionRecord, SESSION_COOKIE_NAME, sessionCookieOptions } from '@/lib/auth/session'
 import { businessUserFor, safeAuthNext } from '@/lib/business'
 import { prisma } from '@/lib/db/client'
-import { sameOriginOk } from '@/lib/http'
+import { clientIp, declaredBodyWithin, sameOriginOk } from '@/lib/http'
 
 // A structurally valid hash that matches no password — verified when the email
 // is unknown so response time doesn't reveal which emails exist.
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
 
   if (!sameOriginOk(req)) return fail('1')
 
-  if (Number(req.headers.get('content-length') ?? 0) > 16384) return fail('1')
+  if (!declaredBodyWithin(req, 16_384)) return fail('1')
   const form = await req.formData()
   next = safeAuthNext(String(form.get('next') ?? ''), '')
   const email = String(form.get('email') ?? '')
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   const password = String(form.get('password') ?? '')
   if (!email || !password) return fail('1')
 
-  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local'
+  const ip = clientIp(req)
   const rateKey = `${ip}:${email}`
   if (
     !(await consumeRateLimit(`login:${rateKey}`)) ||

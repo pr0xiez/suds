@@ -29,13 +29,23 @@ export function marketingConfigured() {
   )
 }
 /** Explicit allowlist projection: no customer names, plates, addresses, notes or filenames. */
+/** Customers type make and model themselves: keep a short name, not a sentence of instructions. */
+const vehicleWord = (value: string) =>
+  value
+    .replace(/[^\p{L}\p{N} .-]/gu, '')
+    .trim()
+    .slice(0, 30)
 export function privateJobSummary(job: {
   vehicle: { make: string; model: string; year: number | null }
   items: { name: string }[]
   completedAt: Date | null
 }) {
   return {
-    vehicle: { make: job.vehicle.make, model: job.vehicle.model, year: job.vehicle.year },
+    vehicle: {
+      make: vehicleWord(job.vehicle.make),
+      model: vehicleWord(job.vehicle.model),
+      year: job.vehicle.year,
+    },
     services: job.items.map((item) => item.name),
     completedAt: job.completedAt?.toISOString() ?? null,
   }

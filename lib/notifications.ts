@@ -16,7 +16,8 @@ export async function queueEmail(tx: Prisma.TransactionClient, input: EmailInput
   return tx.notificationOutbox.upsert({
     where: { dedupeKey: input.dedupeKey },
     update: {},
-    create: input,
+    // Subjects carry owner-chosen business names; a subject is always one line.
+    create: { ...input, subject: input.subject.replace(/[\r\n]+/g, ' ') },
   })
 }
 

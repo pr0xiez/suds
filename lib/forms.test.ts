@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { friendlyError } from '@/lib/forms'
+import { friendlyError, safeBackPath, userFacingError } from '@/lib/forms'
 
 const schema = z.object({
   phone: z.string().min(5, 'Enter a contact phone number'),
@@ -22,5 +22,32 @@ describe('friendlyError', () => {
     expect(friendlyError(Object.assign(new Error('P2002 unique'), { code: 'P2002' }))).toBe(
       'Something went wrong. Try again.',
     )
+  })
+})
+
+describe('error and redirect boundaries', () => {
+  it('passes deliberate messages and hides runtime error classes', () => {
+    expect(friendlyError(new Error('Choose a completed job.'))).toBe('Choose a completed job.')
+    expect(friendlyError(new SyntaxError('Unexpected token in JSON: secret draft'))).toBe(
+      'Something went wrong. Try again.',
+    )
+    expect(userFacingError(new TypeError('fetch failed'), 'Could not queue the draft.')).toBe(
+      'Could not queue the draft.',
+    )
+    expect(userFacingError(new Error('Draft not found.'), 'Could not save.')).toBe(
+      'Draft not found.',
+    )
+  })
+
+  it('keeps hidden back paths on this site', () => {
+    expect(safeBackPath('/jobs/abc?tab=photos', '/jobs')).toBe('/jobs/abc?tab=photos')
+    for (const raw of [
+      '//evil.example',
+      '/\\evil.example',
+      '/\t/evil.example',
+      'https://evil.example',
+      '',
+    ])
+      expect(safeBackPath(raw, '/jobs')).toBe('/jobs')
   })
 })

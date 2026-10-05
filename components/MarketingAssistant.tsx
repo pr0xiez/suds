@@ -4,7 +4,6 @@ import {
   ArrowRightIcon,
   CalendarPlusIcon,
   CameraIcon,
-  CheckIcon,
   CopyIcon,
   FilmSlateIcon,
   FloppyDiskIcon,
@@ -18,6 +17,7 @@ import clsx from 'clsx'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
+import { PhotoPicker } from '@/components/PhotoPicker'
 import {
   Badge,
   btnPrimary,
@@ -26,12 +26,13 @@ import {
   EmptyState,
   Field,
   hintClass,
-  labelClass,
   linkClass,
   selectClass,
   type Tone,
   textareaClass,
 } from '@/components/ui'
+import { usePolledRuns } from '@/components/usePolledRuns'
+import { isInFlight } from '@/lib/aiRunStatus'
 
 type Run = {
   id: string
@@ -109,41 +110,21 @@ export function MarketingAssistant({
     ['job', 'slots', 'intro'].includes(initialTask ?? '') ? (initialTask as string) : 'job',
   )
   const [photoIds, setPhotoIds] = useState<string[]>([])
-  const [runs, setRuns] = useState<Run[]>([])
   const [selected, setSelected] = useState('')
   const [caption, setCaption] = useState('')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [retryKey, setRetryKey] = useState('')
   const [approved, setApproved] = useState(false)
+  const {
+    runs,
+    setRuns,
+    error: loadError,
+  } = usePolledRuns<Run>('/api/marketing', { intervalMs: demo ? 1000 : 15_000 })
   const run = runs.find((item) => item.id === selected) ?? runs[0]
   useEffect(() => {
-    if (busy) return
-    let stopped = false
-    let timer: ReturnType<typeof setTimeout>
-    async function load() {
-      try {
-        const response = await fetch('/api/marketing')
-        const data = await response.json()
-        if (stopped) return
-        if (!response.ok) throw new Error(data.error ?? 'Could not load drafts.')
-        setRuns(data.runs)
-        if (
-          data.runs.some((item: Run) =>
-            ['QUEUED', 'SUBMITTING', 'PROCESSING'].includes(item.status),
-          )
-        )
-          timer = setTimeout(load, demo ? 1000 : 15_000)
-      } catch (err) {
-        if (!stopped) setMessage(err instanceof Error ? err.message : 'Could not load drafts.')
-      }
-    }
-    void load()
-    return () => {
-      stopped = true
-      clearTimeout(timer)
-    }
-  }, [busy, demo])
+    if (loadError) setMessage(loadError)
+  }, [loadError])
   useEffect(() => {
     setCaption(run?.id ? (run.output.caption ?? '') : '')
     setApproved(false)
@@ -228,7 +209,7 @@ export function MarketingAssistant({
   }
   const status = run ? runStatus(run.status) : null
   const pendingRun = Boolean(run && run.status !== 'COMPLETED')
-  const working = run ? ['QUEUED', 'SUBMITTING', 'PROCESSING'].includes(run.status) : false
+  const working = run ? isInFlight(run.status) : false
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <Card title="Choose a marketing task">
@@ -348,56 +329,15 @@ export function MarketingAssistant({
             </Field>
           </div>
           {photos.length > 0 && (
-            <div>
-              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3">
-                <p className={clsx(labelClass, 'mb-0')}>Photos</p>
-                <p className="text-xs tabular-nums text-ink-muted">
-                  {photoIds.length} of 8 selected
-                </p>
-              </div>
-              <p className="mb-3 text-xs text-ink-muted">
-                Optional approved photos. Customer details stay private.
-              </p>
-              <div className="-m-1 grid max-h-64 grid-cols-4 gap-2 overflow-y-auto p-1 sm:grid-cols-5">
-                {photos.map((photo) => {
-                  const index = photoIds.indexOf(photo.id)
-                  return (
-                    <button
-                      key={photo.id}
-                      type="button"
-                      aria-pressed={photoIds.includes(photo.id)}
-                      className={clsx(
-                        'relative overflow-hidden rounded-control bg-surface-2 transition-shadow',
-                        photoIds.includes(photo.id)
-                          ? 'ring-2 ring-accent-ink'
-                          : 'ring-1 ring-line hover:ring-line-strong',
-                      )}
-                      onClick={() => {
-                        setRetryKey('')
-                        setPhotoIds((ids) =>
-                          ids.includes(photo.id)
-                            ? ids.filter((id) => id !== photo.id)
-                            : ids.length < 8
-                              ? [...ids, photo.id]
-                              : ids,
-                        )
-                      }}
-                    >
-                      <img
-                        src={`/api/photos/${photo.id}`}
-                        alt={photo.label}
-                        className="aspect-square w-full object-cover"
-                      />
-                      {index >= 0 ? (
-                        <span className="absolute right-1 top-1 grid size-5 place-items-center rounded-full bg-accent text-on-accent shadow-float">
-                          <CheckIcon aria-hidden className="size-3" weight="bold" />
-                        </span>
-                      ) : null}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
+            <PhotoPicker
+              photos={photos}
+              value={photoIds}
+              onChange={(ids) => {
+                setRetryKey('')
+                setPhotoIds(ids)
+              }}
+              hint="Optional approved photos. Customer details stay private."
+            />
           )}
           <label className={clsx(consentBox, 'bg-surface-2')}>
             <input

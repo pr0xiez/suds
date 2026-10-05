@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MAX_RUN_PHOTOS, MIN_SHORT_PHOTOS } from '@/lib/aiRunStatus'
 import { durableStorageConfigured } from '@/lib/storage'
 import type { VideoProject } from '@/lib/videoEditing'
 export function photoShortsConfigured() {
@@ -54,8 +55,8 @@ export async function createPhotoShort(title: string, urls: string[]): Promise<V
       .url()
       .refine((url) => new URL(url).protocol === 'https:'),
   )
-    .min(2)
-    .max(8)
+    .min(MIN_SHORT_PHOTOS)
+    .max(MAX_RUN_PHOTOS)
     .parse(urls)
   const data = await shotstack('', buildPhotoTimeline(urls))
   return { id: z.string().uuid().parse(data?.response?.id), title, status: 'processing' }

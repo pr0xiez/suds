@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { demoMarketingDraft } from '@/lib/ai/demoMarketing'
+import { MAX_RUN_PHOTOS } from '@/lib/aiRunStatus'
 import { addDays, dateKey, formatDateTime, todayWall } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
 import { demoEnabled } from '@/lib/demo'
@@ -12,7 +13,7 @@ export const marketingBriefSchema = z.object({
   voice: z.enum(['friendly', 'professional', 'bold']).default('friendly'),
   jobId: z.string().min(1).optional(),
   serviceId: z.string().min(1).optional(),
-  photoIds: z.array(z.string().min(1)).max(8).default([]),
+  photoIds: z.array(z.string().min(1)).max(MAX_RUN_PHOTOS).default([]),
   approved: z.literal(true),
 })
 export type MarketingBrief = z.infer<typeof marketingBriefSchema>

@@ -14,6 +14,7 @@ import clsx from 'clsx'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { ErrorBanner } from '@/components/banners'
+import { PhotoPicker } from '@/components/PhotoPicker'
 import {
   Badge,
   btnPrimary,
@@ -23,11 +24,12 @@ import {
   Field,
   hintClass,
   inputClass,
-  labelClass,
   selectClass,
   type Tone,
 } from '@/components/ui'
+import { usePolledRuns } from '@/components/usePolledRuns'
 import { VideoSources } from '@/components/VideoSources'
+import { isInFlight, MAX_RUN_PHOTOS, MIN_SHORT_PHOTOS } from '@/lib/aiRunStatus'
 import { uploadDirectMedia } from '@/lib/media/clientUpload'
 import type { VideoProject } from '@/lib/videoEditing'
 
@@ -36,7 +38,7 @@ const SOURCE_MODES: Array<{ value: string; label: string; detail: string; icon: 
   {
     value: 'photos',
     label: 'Job photos',
-    detail: '2-8 approved photos, four seconds each',
+    detail: `${MIN_SHORT_PHOTOS}-${MAX_RUN_PHOTOS} approved photos, four seconds each`,
     icon: ImagesIcon,
   },
 ]
@@ -79,7 +81,6 @@ export function VideoEditor({
   photos: { id: string; label: string }[]
   userId: string
 }) {
-  const [runs, setRuns] = useState<Run[]>([])
   const [selected, setSelected] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -88,38 +89,20 @@ export function VideoEditor({
   const [photoIds, setPhotoIds] = useState<string[]>([])
   const [retryKey, setRetryKey] = useState('')
   const [uploaded, setUploaded] = useState<{ file: File; id: string } | null>(null)
+  const {
+    runs,
+    setRuns,
+    error: loadError,
+    refresh,
+  } = usePolledRuns<Run>('/api/video-edits', {
+    intervalMs: 15_000,
+    paused: !userId,
+  })
   const run = runs.find((item) => item.id === selected) ?? runs[0]
   const project = run?.project
   useEffect(() => {
-    if (!userId || busy) return
-    let stopped = false
-    let timer: ReturnType<typeof setTimeout>
-    async function load() {
-      try {
-        const response = await fetch('/api/video-edits')
-        const data = await response.json()
-        if (stopped) return
-        if (!response.ok) {
-          setError(data.error ?? 'Could not load your edit history.')
-          return
-        }
-        setRuns(data.runs)
-        if (
-          data.runs.some((item: Run) =>
-            ['QUEUED', 'SUBMITTING', 'PROCESSING'].includes(item.status),
-          )
-        )
-          timer = setTimeout(load, 15_000)
-      } catch {
-        if (!stopped) setError('Could not load edits. Reload to resume.')
-      }
-    }
-    void load()
-    return () => {
-      stopped = true
-      clearTimeout(timer)
-    }
-  }, [userId, busy])
+    if (loadError) setError(loadError)
+  }, [loadError])
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (busy) return
@@ -188,13 +171,14 @@ export function VideoEditor({
       const response = await fetch(`/api/video-edits/${run.id}/retry`, { method: 'POST' })
       const data = await response.json()
       if (!response.ok) throw new Error(data.error ?? 'Could not resume this edit.')
+      refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not resume this edit.')
     } finally {
       setBusy(false)
     }
   }
-  const processing = Boolean(run && ['QUEUED', 'SUBMITTING', 'PROCESSING'].includes(run.status))
+  const processing = Boolean(run && isInFlight(run.status))
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
       <Card title="Your source">
@@ -280,52 +264,17 @@ export function VideoEditor({
             </>
           ) : (
             <div>
-              <div className="mb-1 flex flex-wrap items-baseline justify-between gap-x-3">
-                <p className={clsx(labelClass, 'mb-0')}>Photos</p>
-                <p className="text-xs tabular-nums text-ink-muted">
-                  {photoIds.length} of 8 selected
-                </p>
-              </div>
-              <p className="mb-3 text-xs text-ink-muted">
-                Choose 2-8 approved photos in the order they should appear. Each plays for four
-                seconds.
-              </p>
-              <div className="-m-1 grid max-h-80 grid-cols-3 gap-2 overflow-y-auto p-1 sm:grid-cols-4">
-                {photos.map((photo) => (
-                  <button
-                    key={photo.id}
-                    type="button"
-                    aria-pressed={photoIds.includes(photo.id)}
-                    onClick={() => {
-                      setRetryKey('')
-                      setPhotoIds((ids) =>
-                        ids.includes(photo.id)
-                          ? ids.filter((id) => id !== photo.id)
-                          : ids.length < 8
-                            ? [...ids, photo.id]
-                            : ids,
-                      )
-                    }}
-                    className={clsx(
-                      'relative overflow-hidden rounded-control bg-surface-2 transition-shadow',
-                      photoIds.includes(photo.id)
-                        ? 'ring-2 ring-accent-ink'
-                        : 'ring-1 ring-line hover:ring-line-strong',
-                    )}
-                  >
-                    <img
-                      src={`/api/photos/${photo.id}`}
-                      alt={photo.label}
-                      className="aspect-square w-full object-cover"
-                    />
-                    {photoIds.includes(photo.id) && (
-                      <span className="absolute right-1.5 top-1.5 grid size-6 place-items-center rounded-full bg-accent text-xs font-bold tabular-nums text-on-accent shadow-float">
-                        {photoIds.indexOf(photo.id) + 1}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
+              <PhotoPicker
+                photos={photos}
+                value={photoIds}
+                numbered
+                gridClass="max-h-80 grid-cols-3 sm:grid-cols-4"
+                onChange={(ids) => {
+                  setRetryKey('')
+                  setPhotoIds(ids)
+                }}
+                hint={`Choose ${MIN_SHORT_PHOTOS}-${MAX_RUN_PHOTOS} approved photos in the order they should appear. Each plays for four seconds.`}
+              />
               {!photos.length && (
                 <EmptyState
                   icon={ImagesIcon}
@@ -355,7 +304,7 @@ export function VideoEditor({
               busy ||
               processing ||
               run?.status === 'UNCERTAIN' ||
-              (mode === 'photos' && photoIds.length < 2)
+              (mode === 'photos' && photoIds.length < MIN_SHORT_PHOTOS)
             }
           >
             <MagicWandIcon aria-hidden />

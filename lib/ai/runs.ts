@@ -4,6 +4,7 @@ import {
   marketingBriefSchema,
   marketingConfigured,
 } from '@/lib/ai/marketing'
+import { MAX_RUN_PHOTOS, MIN_SHORT_PHOTOS } from '@/lib/aiRunStatus'
 import { prisma } from '@/lib/db/client'
 import { demoEnabled } from '@/lib/demo'
 import type { AiRun, Prisma } from '@/lib/generated/prisma/client'
@@ -15,7 +16,7 @@ export const videoRunBrief = z.object({
   title: z.string().trim().min(1).max(100),
   style: z.enum(VIDEO_STYLES).default('kelly'),
   uploadId: z.string().min(1).optional(),
-  photoIds: z.array(z.string().min(1)).max(8).default([]),
+  photoIds: z.array(z.string().min(1)).max(MAX_RUN_PHOTOS).default([]),
   approved: z.literal(true),
   idempotencyKey: z.string().uuid(),
 })
@@ -98,7 +99,11 @@ export async function enqueueMarketing(businessId: string, userId: string, input
   )
 }
 export async function approvedPhotos(businessId: string, ids: string[]) {
-  if (ids.length < 2 || ids.length > 8 || new Set(ids).size !== ids.length)
+  if (
+    ids.length < MIN_SHORT_PHOTOS ||
+    ids.length > MAX_RUN_PHOTOS ||
+    new Set(ids).size !== ids.length
+  )
     throw new Error('Choose 2–8 different approved photos.')
   const photos = await prisma.photo.findMany({
     where: { businessId, id: { in: ids }, approvedForMarketing: true },

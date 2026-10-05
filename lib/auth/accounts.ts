@@ -38,6 +38,69 @@ function signupCodeMatches(typed: string | undefined): boolean {
   return timingSafeEqual(digest(typed ?? ''), digest(process.env.SIGNUP_CODE ?? ''))
 }
 
+/** True when no SIGNUP_CODE is configured, or the typed code matches it. */
+function signupCodeOk(typed: string | undefined): boolean {
+  return !process.env.SIGNUP_CODE || signupCodeMatches(typed)
+}
+
+export function slugify(name: string): string {
+  return (
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50) || 'detailer'
+  )
+}
+
+/**
+ * Creates a business with its owner membership and settings. A failed insert would abort the
+ * surrounding Postgres transaction, so slug uniqueness is checked first (retrying with a fresh
+ * random suffix); the 6-byte suffix makes a race between the check and insert negligible.
+ */
+export async function createBusinessTx(
+  tx: Prisma.TransactionClient,
+  input: { userId: string; name: string },
+) {
+  const base = slugify(input.name)
+  let slug = ''
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = `${base}-${randomBytes(6).toString('hex')}`
+    if (!(await tx.business.findUnique({ where: { slug: candidate }, select: { id: true } }))) {
+      slug = candidate
+      break
+    }
+  }
+  if (!slug) throw new Error('Could not allocate a unique business slug')
+  return tx.business.create({
+    data: {
+      name: input.name,
+      slug,
+      memberships: { create: { userId: input.userId, role: 'OWNER', acceptedAt: new Date() } },
+      settings: { create: { businessName: input.name } },
+    },
+  })
+}
+
+/** Existing identity for the email, or a new one with an unusable random password. */
+export async function findOrCreateShadowUser(
+  tx: Prisma.TransactionClient,
+  input: { email: string; name: string },
+) {
+  const existing = await tx.user.findUnique({ where: { email: input.email } })
+  if (existing) return existing
+  return tx.user.create({
+    data: {
+      email: input.email,
+      name: input.name,
+      passwordHash: await hashPassword(randomBytes(32).toString('base64url')),
+    },
+  })
+}
+
+const isLinkPurpose = (purpose: AccountTokenPurpose) =>
+  purpose === 'MEMBERSHIP_INVITE' || purpose === 'CUSTOMER_LINK'
+
 /** Every field problem at once, in form order, so one submit reports them all. */
 export function registrationProblems(input: RegistrationInput): AuthErrorCode[] {
   const problems: AuthErrorCode[] = []
@@ -45,8 +108,7 @@ export function registrationProblems(input: RegistrationInput): AuthErrorCode[] 
   if (input.kind === 'OWNER' && !input.businessName?.trim()) problems.push('business_name')
   if (!validEmail(input.email.trim().toLowerCase())) problems.push('email')
   if (!validPasswordLength(input.password)) problems.push('password_length')
-  if (input.kind === 'OWNER' && process.env.SIGNUP_CODE && !signupCodeMatches(input.signupCode))
-    problems.push('signup_code')
+  if (input.kind === 'OWNER' && !signupCodeOk(input.signupCode)) problems.push('signup_code')
   return problems
 }
 
@@ -107,20 +169,7 @@ export async function registerAccount(input: RegistrationInput) {
       const user = await tx.user.create({ data: { email, name, passwordHash, role: 'STAFF' } })
       let businessId: string | undefined
       if (input.kind === 'OWNER') {
-        const base =
-          (businessName ?? '')
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-|-$/g, '')
-            .slice(0, 50) || 'detailer'
-        const business = await tx.business.create({
-          data: {
-            name: businessName ?? name,
-            slug: `${base}-${randomBytes(3).toString('hex')}`,
-            memberships: { create: { userId: user.id, role: 'OWNER', acceptedAt: new Date() } },
-            settings: { create: { businessName: businessName ?? name } },
-          },
-        })
+        const business = await createBusinessTx(tx, { userId: user.id, name: businessName ?? name })
         businessId = business.id
       }
       await queueAccountToken(tx, {
@@ -200,11 +249,7 @@ export async function consumeAccountToken(
       throw new AuthFormError('sign_in_first')
     if (token.purpose === 'RESET_PASSWORD' && !passwordHash)
       throw new AuthFormError('password_required')
-    if (
-      ['MEMBERSHIP_INVITE', 'CUSTOMER_LINK'].includes(token.purpose) &&
-      !token.user.emailVerifiedAt &&
-      !passwordHash
-    )
+    if (isLinkPurpose(token.purpose) && !token.user.emailVerifiedAt && !passwordHash)
       throw new AuthFormError('password_required')
     const consumed = await tx.accountToken.updateMany({
       where: { id: token.id, consumedAt: null, expiresAt: { gt: new Date() } },
@@ -229,9 +274,7 @@ export async function consumeAccountToken(
         where: { id: token.userId },
         data: {
           emailVerifiedAt: token.user.emailVerifiedAt ?? new Date(),
-          ...(['MEMBERSHIP_INVITE', 'CUSTOMER_LINK'].includes(token.purpose) &&
-          !token.user.emailVerifiedAt &&
-          passwordHash
+          ...(isLinkPurpose(token.purpose) && !token.user.emailVerifiedAt && passwordHash
             ? { passwordHash }
             : {}),
         },
@@ -263,15 +306,10 @@ export async function inviteBusinessUser(
   const email = normalizeEmail(input.email)
   return prisma.$transaction(
     async (tx) => {
-      let user = await tx.user.findUnique({ where: { email } })
-      if (!user)
-        user = await tx.user.create({
-          data: {
-            email,
-            name: input.name.trim().slice(0, 120),
-            passwordHash: await hashPassword(randomBytes(32).toString('base64url')),
-          },
-        })
+      const user = await findOrCreateShadowUser(tx, {
+        email,
+        name: input.name.trim().slice(0, 120),
+      })
       const existing = await tx.businessMembership.findUnique({
         where: { businessId_userId: { businessId, userId: user.id } },
       })
@@ -307,15 +345,7 @@ export async function inviteCustomerPortal(businessId: string, customerId: strin
       })
       if (customer.userId) throw new Error('This customer already has portal access')
       const email = normalizeEmail(customer.email)
-      let user = await tx.user.findUnique({ where: { email } })
-      if (!user)
-        user = await tx.user.create({
-          data: {
-            email,
-            name: customer.name,
-            passwordHash: await hashPassword(randomBytes(32).toString('base64url')),
-          },
-        })
+      const user = await findOrCreateShadowUser(tx, { email, name: customer.name })
       const linked = await tx.customer.findUnique({
         where: { businessId_userId: { businessId, userId: user.id } },
       })
@@ -349,27 +379,14 @@ export async function createBusinessForUser(
   const problems: AuthErrorCode[] = []
   const name = businessName.trim().slice(0, 120)
   if (!name) problems.push('business_name')
-  if (process.env.SIGNUP_CODE && !signupCodeMatches(signupCode)) problems.push('signup_code')
+  if (!signupCodeOk(signupCode)) problems.push('signup_code')
   const [problem, ...more] = problems
   if (problem) throw new AuthFormError(problem, ...more)
-  const base =
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 50) || 'detailer'
   return prisma.$transaction(
     async (tx) => {
       const user = await tx.user.findUniqueOrThrow({ where: { id: userId } })
       if (!user.active || !user.emailVerifiedAt) throw new AuthFormError('unverified')
-      return tx.business.create({
-        data: {
-          name,
-          slug: `${base}-${randomBytes(3).toString('hex')}`,
-          memberships: { create: { userId, role: 'OWNER', acceptedAt: new Date() } },
-          settings: { create: { businessName: name } },
-        },
-      })
+      return createBusinessTx(tx, { userId, name })
     },
     { timeout: 20_000 },
   )

@@ -122,7 +122,54 @@ describe('notification delivery', () => {
     expect(db.prisma.notificationOutbox.update).not.toHaveBeenCalled()
     expect(db.prisma.notificationOutbox.updateMany).toHaveBeenCalledWith({
       where: { id: row.id, status: 'PROCESSING' },
-      data: expect.objectContaining({ status: 'PENDING', lockedAt: null }),
+      data: expect.objectContaining({
+        status: 'PENDING',
+        lockedAt: null,
+        attempts: { increment: 1 },
+      }),
     })
+  })
+
+  it('logs only the failure code, never the message, when the provider fails', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 503 })),
+    )
+    await processNotificationOutbox(1)
+    const logged = info.mock.calls.map((c) => String(c[0])).join('\n')
+    expect(logged).toContain('notification.delivery_failed')
+    expect(logged).toContain('http_503')
+    expect(logged).not.toContain(row.to)
+    info.mockRestore()
+  })
+
+  it('fails terminally on the fifth failed provider attempt', async () => {
+    db.tx.notificationOutbox.update.mockResolvedValue({ ...row, attempts: 4 })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('{}', { status: 500 })),
+    )
+    await processNotificationOutbox(1)
+    expect(db.prisma.notificationOutbox.updateMany).toHaveBeenCalledWith({
+      where: { id: row.id, status: 'PROCESSING' },
+      data: expect.objectContaining({ status: 'FAILED' }),
+    })
+  })
+
+  it('does not consume a send attempt when the recheck hits a database error', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const fetch = vi.fn()
+    vi.stubGlobal('fetch', fetch)
+    db.tx.booking.findFirst.mockRejectedValue(
+      new Error('connection lost for customer@example.test'),
+    )
+    await expect(processNotificationOutbox(1)).resolves.toEqual({ sent: 0, failed: 1 })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(db.prisma.notificationOutbox.updateMany).not.toHaveBeenCalled()
+    const logged = info.mock.calls.map((c) => String(c[0])).join('\n')
+    expect(logged).toContain('notification.recheck_failed')
+    expect(logged).not.toContain('customer@example.test')
+    info.mockRestore()
   })
 })

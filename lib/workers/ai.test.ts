@@ -198,6 +198,31 @@ it('rejects redirecting results and does not save untrusted bytes', async () => 
   )
 })
 
+it('logs the original error type and a lost failure write without leaking messages', async () => {
+  setup()
+  const log = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  vi.mocked(createVideoEdit).mockRejectedValue(new Error('secret customer detail'))
+  vi.mocked(prisma.aiRun.updateMany)
+    .mockResolvedValueOnce({ count: 0 })
+    .mockRejectedValue(new Error('db down secret'))
+  await processAiRuns(1)
+  const lines = log.mock.calls.map((call) => String(call[0]))
+  log.mockRestore()
+  expect(lines.some((line) => line.includes('"event":"ai_run_failed"'))).toBe(true)
+  expect(lines.some((line) => line.includes('"event":"ai_run_failure_write_failed"'))).toBe(true)
+  expect(lines.join('\n')).not.toContain('secret')
+})
+it('does not mark a run uncertain when the failure happens before any paid call', async () => {
+  setup()
+  vi.mocked(prisma.mediaUpload.findFirst).mockResolvedValue(null)
+  vi.spyOn(console, 'error').mockImplementation(() => undefined)
+  await processAiRuns(1)
+  expect(createVideoEdit).not.toHaveBeenCalled()
+  expect(prisma.aiRun.updateMany).toHaveBeenCalledWith(
+    expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED' }) }),
+  )
+})
+
 it('quarantines expired submission leases with no receipt before claiming more work', async () => {
   vi.mocked(prisma.$queryRaw).mockResolvedValue([])
   vi.mocked(prisma.aiRun.updateMany).mockResolvedValue({ count: 1 })

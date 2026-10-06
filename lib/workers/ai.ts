@@ -9,6 +9,7 @@ import { demoEnabled } from '@/lib/demo'
 import { userFacingError } from '@/lib/forms'
 import type { AiRun, Prisma } from '@/lib/generated/prisma/client'
 import { PILOT_STORAGE_BYTES, StorageLimitError, storedBusinessBytes } from '@/lib/media/usage'
+import { logFailure } from '@/lib/observability'
 import { createPhotoShort, getPhotoShort } from '@/lib/ops/photoShorts'
 import {
   acceptedMediaKey,
@@ -130,137 +131,171 @@ async function activeOwner(run: AiRun) {
     select: { userId: true },
   })
 }
-async function processRun(run: AiRun) {
-  let billable = false
-  try {
-    if (run.provider === 'demo' && !demoEnabled()) {
-      await update(run, {
-        status: 'FAILED',
-        error: 'Demo runs require the isolated demo environment.',
-      })
-      return
-    }
-    if (!(await activeOwner(run))) {
-      await update(run, {
-        status: 'FAILED',
-        error: 'The owner no longer has access to this business.',
-      })
-      return
-    }
-    if (run.kind === 'MARKETING') {
-      const input = run.request as unknown as { brief: unknown }
-      const brief = marketingBriefSchema.parse(input.brief)
-      // Refresh actual business facts and consent just before provider execution.
-      const context = await buildMarketingContext(run.businessId, brief)
-      billable = true
-      const output = await generateMarketingDraft(brief, context)
-      await update(run, {
-        status: 'COMPLETED',
-        submittedAt: new Date(),
-        output: output as Prisma.InputJsonValue,
-        error: null,
-      })
-      return
-    }
-    const brief = videoRunBrief.parse(run.request)
-    if (!run.providerId) {
-      let project: VideoProject
-      if (run.kind === 'PHOTOS') {
-        const photos = await approvedPhotos(run.businessId, brief.photoIds)
-        const urls = photos.map((photo) => privateObjectUrl(photo.filename, 3600))
-        billable = true
-        project = await createPhotoShort(brief.title, urls)
-      } else {
-        const upload = await prisma.mediaUpload.findFirst({
-          where: {
-            id: brief.uploadId,
-            businessId: run.businessId,
-            status: 'READY',
-            kind: 'VIDEO',
-            approvedForMarketing: true,
-          },
-        })
-        if (!upload) throw new Error('The approved video is no longer available.')
-        const url = privateObjectUrl(upload.objectKey, 3600)
-        billable = true
-        project = await createVideoEdit({ title: brief.title, style: brief.style, videoUrl: url })
-      }
-      await update(run, {
-        providerId: project.id,
-        status: project.status === 'failed' ? 'FAILED' : 'PROCESSING',
-        submittedAt: new Date(),
-        nextAttemptAt: new Date(Date.now() + 30_000),
-        error: project.status === 'failed' ? 'The editor rejected this source.' : null,
-      })
-      return
-    }
-    const project =
-      run.provider === 'shotstack'
-        ? await getPhotoShort(run.providerId)
-        : await getVideoEdit(run.providerId)
-    if (project.status === 'failed') {
-      await update(run, {
-        status: 'FAILED',
-        error: 'The editing provider could not finish this short.',
-      })
-      return
-    }
-    if (project.status !== 'completed' || !(project.directUrl || project.downloadUrl)) {
-      await update(run, {
+type VideoBrief = ReturnType<typeof videoRunBrief.parse>
+/** A lease-checked row update, plus an object to delete if that update cannot be saved. */
+type Outcome = { patch: Prisma.AiRunUpdateManyMutationInput; rollbackKey?: string }
+const failed = (error: string): Outcome => ({ patch: { status: 'FAILED', error } })
+
+/**
+ * Paid-call invariant. Wrap every provider call that can be charged in `markBillable`. If that
+ * call (or anything after it, before a provider receipt is stored) throws, the outcome is
+ * UNCERTAIN and the run is never auto-resubmitted.
+ */
+class BillingLedger {
+  #billable = false
+  markBillable<T>(providerCall: () => Promise<T>): Promise<T> {
+    this.#billable = true
+    return providerCall()
+  }
+  get billable() {
+    return this.#billable
+  }
+}
+
+/** Swallowed best-effort failures are logged with the error type only, never messages or data. */
+function bestEffort(event: string, run: AiRun) {
+  return (err: unknown) => logFailure(event, err, { runId: run.id })
+}
+
+async function runMarketing(run: AiRun, ledger: BillingLedger): Promise<Outcome> {
+  const input = run.request as unknown as { brief: unknown }
+  const brief = marketingBriefSchema.parse(input.brief)
+  // Refresh actual business facts and consent just before provider execution.
+  const context = await buildMarketingContext(run.businessId, brief)
+  const output = await ledger.markBillable(() => generateMarketingDraft(brief, context))
+  return {
+    patch: {
+      status: 'COMPLETED',
+      submittedAt: new Date(),
+      output: output as Prisma.InputJsonValue,
+      error: null,
+    },
+  }
+}
+
+async function submitVideo(run: AiRun, brief: VideoBrief, ledger: BillingLedger): Promise<Outcome> {
+  let project: VideoProject
+  if (run.kind === 'PHOTOS') {
+    const photos = await approvedPhotos(run.businessId, brief.photoIds)
+    const urls = photos.map((photo) => privateObjectUrl(photo.filename, 3600))
+    project = await ledger.markBillable(() => createPhotoShort(brief.title, urls))
+  } else {
+    const upload = await prisma.mediaUpload.findFirst({
+      where: {
+        id: brief.uploadId,
+        businessId: run.businessId,
+        status: 'READY',
+        kind: 'VIDEO',
+        approvedForMarketing: true,
+      },
+    })
+    if (!upload) throw new Error('The approved video is no longer available.')
+    const url = privateObjectUrl(upload.objectKey, 3600)
+    project = await ledger.markBillable(() =>
+      createVideoEdit({ title: brief.title, style: brief.style, videoUrl: url }),
+    )
+  }
+  return {
+    patch: {
+      providerId: project.id,
+      status: project.status === 'failed' ? 'FAILED' : 'PROCESSING',
+      submittedAt: new Date(),
+      nextAttemptAt: new Date(Date.now() + 30_000),
+      error: project.status === 'failed' ? 'The editor rejected this source.' : null,
+    },
+  }
+}
+
+async function pollVideo(run: AiRun, providerId: string, brief: VideoBrief): Promise<Outcome> {
+  const project =
+    run.provider === 'shotstack' ? await getPhotoShort(providerId) : await getVideoEdit(providerId)
+  if (project.status === 'failed')
+    return failed('The editing provider could not finish this short.')
+  if (project.status !== 'completed' || !(project.directUrl || project.downloadUrl))
+    return {
+      patch: {
         status: 'PROCESSING',
         nextAttemptAt: new Date(Date.now() + 60_000),
         error: null,
-      })
-      return
+      },
     }
-    const bytes = await downloadResult(project.downloadUrl ?? project.directUrl ?? '')
-    const key = mediaKey(run.businessId, 'renders', 'mp4')
-    // Reserve bytes and persist the object pointer before upload, making crashes recoverable.
-    await prisma.$transaction(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`media-upload:${run.businessId}`}))`
-      if (
-        (await storedBusinessBytes(tx, run.businessId, run.id)) + bytes.length >
-        PILOT_STORAGE_BYTES
+  return finalizeRender(run, brief, project.downloadUrl ?? project.directUrl ?? '')
+}
+
+async function finalizeRender(run: AiRun, brief: VideoBrief, resultUrl: string): Promise<Outcome> {
+  const bytes = await downloadResult(resultUrl)
+  const key = mediaKey(run.businessId, 'renders', 'mp4')
+  // Reserve bytes and persist the object pointer before upload, making crashes recoverable.
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`media-upload:${run.businessId}`}))`
+    if (
+      (await storedBusinessBytes(tx, run.businessId, run.id)) + bytes.length >
+      PILOT_STORAGE_BYTES
+    )
+      throw new StorageLimitError(
+        'The 2 GB pilot storage allowance has been reached. Delete unused media before resuming this edit.',
       )
-        throw new StorageLimitError(
-          'The 2 GB pilot storage allowance has been reached. Delete unused media before resuming this edit.',
-        )
-      const reserved = await tx.aiRun.updateMany({
-        where: { id: run.id, businessId: run.businessId, lockedAt: run.lockedAt },
-        data: { objectKey: key, output: { title: brief.title, bytes: bytes.length } },
-      })
-      if (reserved.count !== 1) throw new Error('Worker lease was lost.')
+    const reserved = await tx.aiRun.updateMany({
+      where: { id: run.id, businessId: run.businessId, lockedAt: run.lockedAt },
+      data: { objectKey: key, output: { title: brief.title, bytes: bytes.length } },
     })
-    if (run.objectKey && run.objectKey !== key)
-      await deleteObject(run.objectKey).catch(() => undefined)
-    await putObject(key, bytes, 'video/mp4')
+    if (reserved.count !== 1) throw new Error('Worker lease was lost.')
+  })
+  if (run.objectKey && run.objectKey !== key)
+    await deleteObject(run.objectKey).catch(bestEffort('ai_run_stale_object_delete_failed', run))
+  await putObject(key, bytes, 'video/mp4')
+  return {
+    patch: {
+      status: 'COMPLETED',
+      objectKey: key,
+      output: { title: brief.title, bytes: bytes.length },
+      error: null,
+    },
+    rollbackKey: key,
+  }
+}
+
+async function executeRun(run: AiRun, ledger: BillingLedger): Promise<Outcome> {
+  if (run.provider === 'demo' && !demoEnabled())
+    return failed('Demo runs require the isolated demo environment.')
+  if (!(await activeOwner(run))) return failed('The owner no longer has access to this business.')
+  if (run.kind === 'MARKETING') return runMarketing(run, ledger)
+  const brief = videoRunBrief.parse(run.request)
+  return run.providerId ? pollVideo(run, run.providerId, brief) : submitVideo(run, brief, ledger)
+}
+
+async function recordFailure(run: AiRun, err: unknown, ledger: BillingLedger) {
+  logFailure('ai_run_failed', err, { runId: run.id, kind: run.kind, attempts: run.attempts })
+  // No paid retry after any uncertain submit/receipt. Only read/status/download retries.
+  const uncertain = ledger.billable && !run.providerId
+  const retry =
+    Boolean(run.providerId) &&
+    !(err instanceof StorageLimitError) &&
+    run.attempts < 30 &&
+    run.createdAt.getTime() > Date.now() - 2 * 86400_000
+  const error = userFacingError(err, 'The AI request could not be completed.')
+  await update(run, {
+    status: uncertain ? 'UNCERTAIN' : retry ? 'PROCESSING' : 'FAILED',
+    error: error.slice(0, 500),
+    nextAttemptAt: new Date(
+      Date.now() + Math.min(600_000, 30_000 * 2 ** Math.min(run.attempts, 4)),
+    ),
+  }).catch(bestEffort('ai_run_failure_write_failed', run))
+}
+
+async function processRun(run: AiRun) {
+  const ledger = new BillingLedger()
+  try {
+    const outcome = await executeRun(run, ledger)
     try {
-      await update(run, {
-        status: 'COMPLETED',
-        objectKey: key,
-        output: { title: brief.title, bytes: bytes.length },
-        error: null,
-      })
+      await update(run, outcome.patch)
     } catch (err) {
-      await deleteObject(key).catch(() => undefined)
+      if (outcome.rollbackKey)
+        await deleteObject(outcome.rollbackKey).catch(bestEffort('ai_run_rollback_failed', run))
       throw err
     }
   } catch (err) {
-    // No paid retry after any uncertain submit/receipt. Only read/status/download retries.
-    const uncertain = billable && !run.providerId
-    const retry =
-      Boolean(run.providerId) &&
-      !(err instanceof StorageLimitError) &&
-      run.attempts < 30 &&
-      run.createdAt.getTime() > Date.now() - 2 * 86400_000
-    const error = userFacingError(err, 'The AI request could not be completed.')
-    await update(run, {
-      status: uncertain ? 'UNCERTAIN' : retry ? 'PROCESSING' : 'FAILED',
-      error: error.slice(0, 500),
-      nextAttemptAt: new Date(
-        Date.now() + Math.min(600_000, 30_000 * 2 ** Math.min(run.attempts, 4)),
-      ),
-    }).catch(() => undefined)
+    await recordFailure(run, err, ledger)
   }
 }
 export async function cleanupExpiredUploads(limit = 20) {
@@ -279,8 +314,9 @@ export async function cleanupExpiredUploads(limit = 20) {
         await deleteObject(acceptedMediaKey(upload.objectKey))
       await prisma.mediaUpload.deleteMany({ where: { id: upload.id, status: upload.status } })
       removed++
-    } catch {
-      /* Later cron retries cleanup. */
+    } catch (err) {
+      // Later cron retries cleanup.
+      logFailure('upload_cleanup_failed', err, { uploadId: upload.id })
     }
   }
   return removed

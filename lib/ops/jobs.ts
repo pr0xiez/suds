@@ -1,5 +1,6 @@
 import { assertScheduleAvailable, lockBusinessSchedule } from '@/lib/bookingSchedule'
 import { prisma } from '@/lib/db/client'
+import { TX_OPTS } from '@/lib/db/txOptions'
 import type { Booking, Job, Prisma } from '@/lib/generated/prisma/client'
 import type { JobStatus, PaymentMethod } from '@/lib/generated/prisma/enums'
 import {
@@ -82,30 +83,27 @@ async function assertVehicleBelongsToCustomer(
 export async function createJob(businessId: string, input: JobInput): Promise<Job> {
   await assertVehicleBelongsToCustomer(businessId, input.vehicleId, input.customerId)
   const items = await buildItems(prisma, businessId, [], input)
-  return prisma.$transaction(
-    async (tx) => {
-      await assertScheduleAvailable(
-        tx,
+  return prisma.$transaction(async (tx) => {
+    await assertScheduleAvailable(
+      tx,
+      businessId,
+      input.scheduledAt,
+      deriveDuration(input.durationMin, items),
+    )
+    return tx.job.create({
+      data: {
         businessId,
-        input.scheduledAt,
-        deriveDuration(input.durationMin, items),
-      )
-      return tx.job.create({
-        data: {
-          businessId,
-          customerId: input.customerId,
-          vehicleId: input.vehicleId,
-          scheduledAt: input.scheduledAt,
-          durationMin: deriveDuration(input.durationMin, items),
-          notes: input.notes,
-          internalNotes: input.internalNotes,
-          discountCents: input.discountCents,
-          items: { create: items },
-        },
-      })
-    },
-    { timeout: 20_000, maxWait: 20_000 },
-  )
+        customerId: input.customerId,
+        vehicleId: input.vehicleId,
+        scheduledAt: input.scheduledAt,
+        durationMin: deriveDuration(input.durationMin, items),
+        notes: input.notes,
+        internalNotes: input.internalNotes,
+        discountCents: input.discountCents,
+        items: { create: items },
+      },
+    })
+  }, TX_OPTS)
 }
 
 export async function updateJob(businessId: string, id: string, input: JobInput): Promise<Job> {

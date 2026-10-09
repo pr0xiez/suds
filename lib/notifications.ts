@@ -1,5 +1,6 @@
 import { lockBusinessSchedule } from '@/lib/bookingSchedule'
 import { prisma } from '@/lib/db/client'
+import { TX_OPTS } from '@/lib/db/txOptions'
 import type { Prisma } from '@/lib/generated/prisma/client'
 
 export interface EmailInput {
@@ -85,67 +86,64 @@ export async function processNotificationOutbox(
     try {
       // Recheck under the writers' locks, then release them before the provider call so a slow
       // provider never stalls bookings. A change after this check queues its own notice.
-      const deliverable = await prisma.$transaction(
-        async (tx) => {
-          if (row.dedupeKey.startsWith('account:')) {
-            let accountToken = await tx.accountToken.findUnique({
+      const deliverable = await prisma.$transaction(async (tx) => {
+        if (row.dedupeKey.startsWith('account:')) {
+          let accountToken = await tx.accountToken.findUnique({
+            where: { id: row.dedupeKey.slice('account:'.length) },
+            include: { user: { select: { active: true } } },
+          })
+          if (
+            accountToken?.purpose === 'CUSTOMER_LINK' &&
+            accountToken.businessId &&
+            accountToken.customerId
+          ) {
+            await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "businessId" = ${accountToken.businessId} AND "id" = ${accountToken.customerId} FOR UPDATE`
+            accountToken = await tx.accountToken.findUnique({
               where: { id: row.dedupeKey.slice('account:'.length) },
               include: { user: { select: { active: true } } },
             })
-            if (
-              accountToken?.purpose === 'CUSTOMER_LINK' &&
-              accountToken.businessId &&
-              accountToken.customerId
-            ) {
-              await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "businessId" = ${accountToken.businessId} AND "id" = ${accountToken.customerId} FOR UPDATE`
-              accountToken = await tx.accountToken.findUnique({
-                where: { id: row.dedupeKey.slice('account:'.length) },
-                include: { user: { select: { active: true } } },
-              })
-            }
-            if (
-              !accountToken ||
-              accountToken.consumedAt ||
-              accountToken.expiresAt <= new Date() ||
-              !accountToken.user.active
-            ) {
-              await tx.notificationOutbox.update({
-                where: { id: row.id },
-                data: { status: 'CANCELED', lockedAt: null },
-              })
-              return false
-            }
           }
-          const bookingMatch = /^booking:([^:]+):/.exec(row.dedupeKey)
-          if (bookingMatch && row.businessId) {
-            await lockBusinessSchedule(tx, row.businessId)
-            const booking = await tx.booking.findFirst({
-              where: { id: bookingMatch[1], businessId: row.businessId },
-              include: { job: { select: { status: true } } },
+          if (
+            !accountToken ||
+            accountToken.consumedAt ||
+            accountToken.expiresAt <= new Date() ||
+            !accountToken.user.active
+          ) {
+            await tx.notificationOutbox.update({
+              where: { id: row.id },
+              data: { status: 'CANCELED', lockedAt: null },
             })
-            const reminder = /:reminder:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/.exec(
-              row.dedupeKey,
-            )
-            if (
-              !booking ||
-              (reminder &&
-                (booking.status !== 'CONFIRMED' ||
-                  booking.scheduledAt.toISOString() !== reminder[1] ||
-                  booking.job?.status !== 'SCHEDULED' ||
-                  !row.dedupeKey.endsWith(`:v${booking.updatedAt.toISOString()}`)))
-            ) {
-              await tx.notificationOutbox.update({
-                where: { id: row.id },
-                data: { status: 'CANCELED', lockedAt: null },
-              })
-              return false
-            }
+            return false
           }
-          const current = await tx.notificationOutbox.findUnique({ where: { id: row.id } })
-          return current?.status === 'PROCESSING'
-        },
-        { timeout: 20_000, maxWait: 20_000 },
-      )
+        }
+        const bookingMatch = /^booking:([^:]+):/.exec(row.dedupeKey)
+        if (bookingMatch && row.businessId) {
+          await lockBusinessSchedule(tx, row.businessId)
+          const booking = await tx.booking.findFirst({
+            where: { id: bookingMatch[1], businessId: row.businessId },
+            include: { job: { select: { status: true } } },
+          })
+          const reminder = /:reminder:(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)/.exec(
+            row.dedupeKey,
+          )
+          if (
+            !booking ||
+            (reminder &&
+              (booking.status !== 'CONFIRMED' ||
+                booking.scheduledAt.toISOString() !== reminder[1] ||
+                booking.job?.status !== 'SCHEDULED' ||
+                !row.dedupeKey.endsWith(`:v${booking.updatedAt.toISOString()}`)))
+          ) {
+            await tx.notificationOutbox.update({
+              where: { id: row.id },
+              data: { status: 'CANCELED', lockedAt: null },
+            })
+            return false
+          }
+        }
+        const current = await tx.notificationOutbox.findUnique({ where: { id: row.id } })
+        return current?.status === 'PROCESSING'
+      }, TX_OPTS)
       if (!deliverable) continue
       const res = await fetch(url, {
         method: 'POST',

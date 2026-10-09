@@ -9,6 +9,7 @@ import { requirePortalUser } from '@/lib/bookingCustomer'
 import { lockBusinessSchedule } from '@/lib/bookingSchedule'
 import { parseDatetimeLocal, toDatetimeLocalValue } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
+import { TX_OPTS } from '@/lib/db/txOptions'
 import { fdString, friendlyError } from '@/lib/forms'
 import {
   assertVehicleRoom,
@@ -157,15 +158,12 @@ export async function addAvailabilityBlockAction(
 
 export async function removeAvailabilityBlockAction(fd: FormData): Promise<void> {
   const user = await requireOwner()
-  await prisma.$transaction(
-    async (tx) => {
-      await lockBusinessSchedule(tx, user.businessId)
-      await tx.availabilityBlock.deleteMany({
-        where: { id: fdString(fd, 'id'), businessId: user.businessId },
-      })
-    },
-    { timeout: 20_000, maxWait: 20_000 },
-  )
+  await prisma.$transaction(async (tx) => {
+    await lockBusinessSchedule(tx, user.businessId)
+    await tx.availabilityBlock.deleteMany({
+      where: { id: fdString(fd, 'id'), businessId: user.businessId },
+    })
+  }, TX_OPTS)
   revalidatePath('/', 'layout')
   redirect('/availability')
 }

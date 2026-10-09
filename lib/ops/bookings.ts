@@ -13,6 +13,7 @@ import {
 } from '@/lib/bookingSchedule'
 import { formatDateTime } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
+import { TX_OPTS } from '@/lib/db/txOptions'
 import type { Booking, Prisma } from '@/lib/generated/prisma/client'
 import { queueEmail } from '@/lib/notifications'
 
@@ -67,41 +68,38 @@ export async function publicBusiness(slug: string) {
 }
 
 export async function publicAvailability(businessId: string, day: string, serviceIds: string[]) {
-  return prisma.$transaction(
-    async (tx) => {
-      const business = await tx.business.findFirst({
-        where: { id: businessId, status: 'PUBLISHED' },
-        include: { settings: true },
-      })
-      if (
-        !business?.settings ||
-        serviceIds.length === 0 ||
-        serviceIds.length > 10 ||
-        new Set(serviceIds).size !== serviceIds.length
-      )
-        return []
-      const services = await tx.service.findMany({
-        where: { businessId, id: { in: serviceIds }, active: true },
-      })
-      if (services.length !== serviceIds.length) return []
-      const duration = services.reduce((total, service) => total + service.durationMin, 0)
-      if (
-        duration < 15 ||
-        duration > 1440 ||
-        services.every((service) => service.category === 'ADDON')
-      )
-        return []
-      const window = dayWindow(day, business.settings.timezone)
-      if (!window) return []
-      return availableSlots(
-        business.settings,
-        day,
-        duration,
-        await scheduleBusyIntervals(tx, businessId, { window }),
-      )
-    },
-    { timeout: 20_000, maxWait: 20_000 },
-  )
+  return prisma.$transaction(async (tx) => {
+    const business = await tx.business.findFirst({
+      where: { id: businessId, status: 'PUBLISHED' },
+      include: { settings: true },
+    })
+    if (
+      !business?.settings ||
+      serviceIds.length === 0 ||
+      serviceIds.length > 10 ||
+      new Set(serviceIds).size !== serviceIds.length
+    )
+      return []
+    const services = await tx.service.findMany({
+      where: { businessId, id: { in: serviceIds }, active: true },
+    })
+    if (services.length !== serviceIds.length) return []
+    const duration = services.reduce((total, service) => total + service.durationMin, 0)
+    if (
+      duration < 15 ||
+      duration > 1440 ||
+      services.every((service) => service.category === 'ADDON')
+    )
+      return []
+    const window = dayWindow(day, business.settings.timezone)
+    if (!window) return []
+    return availableSlots(
+      business.settings,
+      day,
+      duration,
+      await scheduleBusyIntervals(tx, businessId, { window }),
+    )
+  }, TX_OPTS)
 }
 
 async function createBookingJob(tx: Prisma.TransactionClient, booking: Booking) {
@@ -218,158 +216,151 @@ export async function submitPublicBooking(userId: string, raw: PublicBookingInpu
   const input = inputSchema.parse(raw)
   if (new Set(input.serviceIds).size !== input.serviceIds.length)
     throw new Error('Choose each service only once')
-  return prisma.$transaction(
-    async (tx) => {
-      const business = await tx.business.findFirst({
-        where: { slug: input.slug, status: 'PUBLISHED' },
-        include: { settings: true },
+  return prisma.$transaction(async (tx) => {
+    const business = await tx.business.findFirst({
+      where: { slug: input.slug, status: 'PUBLISHED' },
+      include: { settings: true },
+    })
+    if (!business?.settings) throw new Error('This business is not accepting bookings')
+    await lockBusinessSchedule(tx, business.id)
+    const user = await tx.user.findUnique({ where: { id: userId } })
+    if (!user?.active || !user.emailVerifiedAt) throw new Error('Verify your email before booking')
+    let customer = await tx.customer.findFirst({ where: { businessId: business.id, userId } })
+    if (customer) {
+      const existing = await tx.booking.findFirst({
+        where: {
+          businessId: business.id,
+          customerId: customer.id,
+          idempotencyKey: input.idempotencyKey,
+        },
       })
-      if (!business?.settings) throw new Error('This business is not accepting bookings')
-      await lockBusinessSchedule(tx, business.id)
-      const user = await tx.user.findUnique({ where: { id: userId } })
-      if (!user?.active || !user.emailVerifiedAt)
-        throw new Error('Verify your email before booking')
-      let customer = await tx.customer.findFirst({ where: { businessId: business.id, userId } })
-      if (customer) {
-        const existing = await tx.booking.findFirst({
-          where: {
-            businessId: business.id,
-            customerId: customer.id,
-            idempotencyKey: input.idempotencyKey,
-          },
-        })
-        if (existing) return existing
-        const open = await tx.booking.count({
-          where: {
-            businessId: business.id,
-            customerId: customer.id,
-            status: { in: ['PENDING', 'CONFIRMED'] },
-            scheduledAt: { gt: new Date() },
-          },
-        })
-        if (open >= MAX_OPEN_BOOKINGS)
-          throw new Error(
-            'You already have several upcoming appointments here. Contact the business to book more.',
-          )
+      if (existing) return existing
+      const open = await tx.booking.count({
+        where: {
+          businessId: business.id,
+          customerId: customer.id,
+          status: { in: ['PENDING', 'CONFIRMED'] },
+          scheduledAt: { gt: new Date() },
+        },
+      })
+      if (open >= MAX_OPEN_BOOKINGS)
+        throw new Error(
+          'You already have several upcoming appointments here. Contact the business to book more.',
+        )
+    }
+    const services = await tx.service.findMany({
+      where: { businessId: business.id, id: { in: input.serviceIds }, active: true },
+    })
+    if (services.length !== input.serviceIds.length)
+      throw new Error('One of these services is no longer available')
+    if (services.every((service) => service.category === 'ADDON'))
+      throw new Error('Choose a detailing package before adding extras')
+    const byId = new Map(services.map((service) => [service.id, service]))
+    const snapshots = input.serviceIds.map((id, sort) => {
+      const service = byId.get(id)
+      if (!service) throw new Error('Service unavailable')
+      return {
+        serviceId: service.id,
+        name: service.name,
+        priceCents: service.priceCents,
+        durationMin: service.durationMin,
+        sort,
       }
-      const services = await tx.service.findMany({
-        where: { businessId: business.id, id: { in: input.serviceIds }, active: true },
+    })
+    const durationMin = snapshots.reduce((total, item) => total + item.durationMin, 0)
+    assertPublicSlot(business.settings, input.scheduledAt, durationMin)
+    await assertScheduleAvailable(tx, business.id, input.scheduledAt, durationMin)
+    if (!customer)
+      customer = await tx.customer.create({
+        data: {
+          businessId: business.id,
+          userId,
+          name: user.name,
+          email: user.email,
+          phone: input.phone,
+          address: input.address,
+        },
       })
-      if (services.length !== input.serviceIds.length)
-        throw new Error('One of these services is no longer available')
-      if (services.every((service) => service.category === 'ADDON'))
-        throw new Error('Choose a detailing package before adding extras')
-      const byId = new Map(services.map((service) => [service.id, service]))
-      const snapshots = input.serviceIds.map((id, sort) => {
-        const service = byId.get(id)
-        if (!service) throw new Error('Service unavailable')
-        return {
-          serviceId: service.id,
-          name: service.name,
-          priceCents: service.priceCents,
-          durationMin: service.durationMin,
-          sort,
-        }
+    else
+      customer = await tx.customer.update({
+        where: { businessId_id: { businessId: business.id, id: customer.id } },
+        data: { phone: input.phone, address: input.address },
       })
-      const durationMin = snapshots.reduce((total, item) => total + item.durationMin, 0)
-      assertPublicSlot(business.settings, input.scheduledAt, durationMin)
-      await assertScheduleAvailable(tx, business.id, input.scheduledAt, durationMin)
-      if (!customer)
-        customer = await tx.customer.create({
-          data: {
-            businessId: business.id,
-            userId,
-            name: user.name,
-            email: user.email,
-            phone: input.phone,
-            address: input.address,
-          },
-        })
-      else
-        customer = await tx.customer.update({
-          where: { businessId_id: { businessId: business.id, id: customer.id } },
-          data: { phone: input.phone, address: input.address },
-        })
-      let vehicle: { id: string } | null = null
-      if (input.vehicleId) {
-        vehicle = await tx.vehicle.findFirst({
-          where: { id: input.vehicleId, businessId: business.id, customerId: customer.id },
-        })
-        if (!vehicle) throw new Error('Choose one of your vehicles')
-      } else {
-        if (!input.make || !input.model) throw new Error('Enter your vehicle make and model')
-        await assertVehicleRoom(tx, business.id, customer.id)
-        vehicle = await tx.vehicle.create({
-          data: {
-            businessId: business.id,
-            customerId: customer.id,
-            make: input.make,
-            model: input.model,
-            year: input.year,
-          },
-        })
-      }
-      const status = business.settings.bookingMode === 'REQUEST' ? 'PENDING' : 'CONFIRMED'
-      let booking = await tx.booking.create({
+    let vehicle: { id: string } | null = null
+    if (input.vehicleId) {
+      vehicle = await tx.vehicle.findFirst({
+        where: { id: input.vehicleId, businessId: business.id, customerId: customer.id },
+      })
+      if (!vehicle) throw new Error('Choose one of your vehicles')
+    } else {
+      if (!input.make || !input.model) throw new Error('Enter your vehicle make and model')
+      await assertVehicleRoom(tx, business.id, customer.id)
+      vehicle = await tx.vehicle.create({
         data: {
           businessId: business.id,
           customerId: customer.id,
-          vehicleId: vehicle.id,
-          scheduledAt: input.scheduledAt,
-          durationMin,
-          serviceSnapshots: snapshots,
-          priceCents: snapshots.reduce((sum, item) => sum + item.priceCents, 0),
-          idempotencyKey: input.idempotencyKey,
-          status,
-          address: input.address,
-          customerNotes: input.customerNotes,
-          waterPowerNotes: input.waterPowerNotes,
+          make: input.make,
+          model: input.model,
+          year: input.year,
         },
       })
-      if (status === 'CONFIRMED') {
-        const job = await createBookingJob(tx, booking)
-        booking = await tx.booking.update({ where: { id: booking.id }, data: { jobId: job.id } })
-      }
-      await queueBookingNotice(tx, booking, status === 'PENDING' ? 'requested' : 'confirmed')
-      return booking
-    },
-    { timeout: 20_000, maxWait: 20_000 },
-  )
+    }
+    const status = business.settings.bookingMode === 'REQUEST' ? 'PENDING' : 'CONFIRMED'
+    let booking = await tx.booking.create({
+      data: {
+        businessId: business.id,
+        customerId: customer.id,
+        vehicleId: vehicle.id,
+        scheduledAt: input.scheduledAt,
+        durationMin,
+        serviceSnapshots: snapshots,
+        priceCents: snapshots.reduce((sum, item) => sum + item.priceCents, 0),
+        idempotencyKey: input.idempotencyKey,
+        status,
+        address: input.address,
+        customerNotes: input.customerNotes,
+        waterPowerNotes: input.waterPowerNotes,
+      },
+    })
+    if (status === 'CONFIRMED') {
+      const job = await createBookingJob(tx, booking)
+      booking = await tx.booking.update({ where: { id: booking.id }, data: { jobId: job.id } })
+    }
+    await queueBookingNotice(tx, booking, status === 'PENDING' ? 'requested' : 'confirmed')
+    return booking
+  }, TX_OPTS)
 }
 
 export async function decideBooking(businessId: string, bookingId: string, accept: boolean) {
-  return prisma.$transaction(
-    async (tx) => {
-      await lockBusinessSchedule(tx, businessId)
-      const booking = await tx.booking.findFirst({ where: { id: bookingId, businessId } })
-      if (!booking) throw new Error('Appointment not found')
-      if (booking.status === (accept ? 'CONFIRMED' : 'DECLINED')) return booking
-      if (booking.status !== 'PENDING') throw new Error('This request has already been handled')
-      if (!accept) {
-        const updated = await tx.booking.update({
-          where: { id: booking.id },
-          data: { status: 'DECLINED', reservedUntil: null },
-        })
-        await queueBookingNotice(tx, updated, 'declined')
-        return updated
-      }
-      if (booking.scheduledAt.getTime() <= Date.now())
-        throw new Error('This appointment time has already passed')
-      const settings = await tx.settings.findUniqueOrThrow({ where: { businessId } })
-      assertPublicSlot({ ...settings, leadTimeMin: 0 }, booking.scheduledAt, booking.durationMin)
-      await assertScheduleAvailable(tx, businessId, booking.scheduledAt, booking.durationMin, {
-        excludeBookingId: booking.id,
-      })
-      const job = await createBookingJob(tx, booking)
+  return prisma.$transaction(async (tx) => {
+    await lockBusinessSchedule(tx, businessId)
+    const booking = await tx.booking.findFirst({ where: { id: bookingId, businessId } })
+    if (!booking) throw new Error('Appointment not found')
+    if (booking.status === (accept ? 'CONFIRMED' : 'DECLINED')) return booking
+    if (booking.status !== 'PENDING') throw new Error('This request has already been handled')
+    if (!accept) {
       const updated = await tx.booking.update({
         where: { id: booking.id },
-        data: { status: 'CONFIRMED', jobId: job.id, reservedUntil: null },
+        data: { status: 'DECLINED', reservedUntil: null },
       })
-      await queueBookingNotice(tx, updated, 'confirmed')
+      await queueBookingNotice(tx, updated, 'declined')
       return updated
-    },
-    { timeout: 20_000, maxWait: 20_000 },
-  )
+    }
+    if (booking.scheduledAt.getTime() <= Date.now())
+      throw new Error('This appointment time has already passed')
+    const settings = await tx.settings.findUniqueOrThrow({ where: { businessId } })
+    assertPublicSlot({ ...settings, leadTimeMin: 0 }, booking.scheduledAt, booking.durationMin)
+    await assertScheduleAvailable(tx, businessId, booking.scheduledAt, booking.durationMin, {
+      excludeBookingId: booking.id,
+    })
+    const job = await createBookingJob(tx, booking)
+    const updated = await tx.booking.update({
+      where: { id: booking.id },
+      data: { status: 'CONFIRMED', jobId: job.id, reservedUntil: null },
+    })
+    await queueBookingNotice(tx, updated, 'confirmed')
+    return updated
+  }, TX_OPTS)
 }
 
 async function customerBooking(tx: Prisma.TransactionClient, userId: string, bookingId: string) {
@@ -385,35 +376,40 @@ async function customerBooking(tx: Prisma.TransactionClient, userId: string, boo
   return booking
 }
 
+// A customer may change a booking only while it is open and any linked job has not started.
+function isCustomerChangeable(booking: { status: string; job: { status: string } | null }) {
+  return (
+    ['PENDING', 'CONFIRMED'].includes(booking.status) &&
+    (!booking.job || booking.job.status === 'SCHEDULED')
+  )
+}
+
+// Ignore the booking being changed (and its job) when checking schedule conflicts.
+function excludeFor(booking: { id: string; jobId: string | null }) {
+  return {
+    excludeBookingId: booking.id,
+    ...(booking.jobId ? { excludeJobId: booking.jobId } : {}),
+  }
+}
+
 export async function customerRescheduleAvailability(
   userId: string,
   bookingId: string,
   day: string,
 ) {
-  return prisma.$transaction(
-    async (tx) => {
-      const booking = await customerBooking(tx, userId, bookingId)
-      if (
-        !['PENDING', 'CONFIRMED'].includes(booking.status) ||
-        (booking.job && booking.job.status !== 'SCHEDULED')
-      )
-        return []
-      const settings = booking.business.settings
-      const window = settings && dayWindow(day, settings.timezone)
-      if (!settings || !window) return []
-      return availableSlots(
-        settings,
-        day,
-        booking.durationMin,
-        await scheduleBusyIntervals(tx, booking.businessId, {
-          window,
-          excludeBookingId: booking.id,
-          ...(booking.jobId ? { excludeJobId: booking.jobId } : {}),
-        }),
-      )
-    },
-    { timeout: 20_000, maxWait: 20_000 },
-  )
+  return prisma.$transaction(async (tx) => {
+    const booking = await customerBooking(tx, userId, bookingId)
+    if (!isCustomerChangeable(booking)) return []
+    const settings = booking.business.settings
+    const window = settings && dayWindow(day, settings.timezone)
+    if (!settings || !window) return []
+    return availableSlots(
+      settings,
+      day,
+      booking.durationMin,
+      await scheduleBusyIntervals(tx, booking.businessId, { window, ...excludeFor(booking) }),
+    )
+  }, TX_OPTS)
 }
 
 export async function changeCustomerBooking(
@@ -421,51 +417,50 @@ export async function changeCustomerBooking(
   bookingId: string,
   newTime: Date | null,
 ) {
-  return prisma.$transaction(
-    async (tx) => {
-      const initial = await customerBooking(tx, userId, bookingId)
-      await lockBusinessSchedule(tx, initial.businessId)
-      const booking = await customerBooking(tx, userId, bookingId)
-      if (!newTime && booking.status === 'CANCELED') return booking
-      if (
-        !['PENDING', 'CONFIRMED'].includes(booking.status) ||
-        (booking.job && booking.job.status !== 'SCHEDULED')
+  return prisma.$transaction(async (tx) => {
+    // Resolve businessId first so the business lock is taken before the authoritative
+    // re-read; the second read sees the state after any concurrent change commits.
+    const initial = await customerBooking(tx, userId, bookingId)
+    await lockBusinessSchedule(tx, initial.businessId)
+    const booking = await customerBooking(tx, userId, bookingId)
+    if (!newTime && booking.status === 'CANCELED') return booking
+    if (!isCustomerChangeable(booking))
+      throw new Error('This appointment can no longer be changed online. Contact the detailer.')
+    const settings = booking.business.settings
+    if (!settings) throw new Error('Business unavailable')
+    if (booking.scheduledAt.getTime() < Date.now() + settings.cancellationHours * 60 * 60_000)
+      throw new Error(
+        `Changes require ${settings.cancellationHours} hours notice. Contact the detailer.`,
       )
-        throw new Error('This appointment can no longer be changed online. Contact the detailer.')
-      const settings = booking.business.settings
-      if (!settings) throw new Error('Business unavailable')
-      if (booking.scheduledAt.getTime() < Date.now() + settings.cancellationHours * 60 * 60_000)
-        throw new Error(
-          `Changes require ${settings.cancellationHours} hours notice. Contact the detailer.`,
-        )
-      if (!newTime) {
-        if (booking.jobId)
-          await tx.job.update({ where: { id: booking.jobId }, data: { status: 'CANCELED' } })
-        const updated = await tx.booking.update({
-          where: { id: booking.id },
-          data: { status: 'CANCELED', reservedUntil: null },
-        })
-        await queueBookingNotice(tx, updated, 'canceled')
-        return updated
-      }
-      if (booking.scheduledAt.getTime() === newTime.getTime()) return booking
-      assertPublicSlot(settings, newTime, booking.durationMin)
-      await assertScheduleAvailable(tx, booking.businessId, newTime, booking.durationMin, {
-        excludeBookingId: booking.id,
-        ...(booking.jobId ? { excludeJobId: booking.jobId } : {}),
-      })
-      // An approved request remains approved when the customer chooses another available time.
+    if (!newTime) {
       if (booking.jobId)
-        await tx.job.update({ where: { id: booking.jobId }, data: { scheduledAt: newTime } })
+        await tx.job.update({ where: { id: booking.jobId }, data: { status: 'CANCELED' } })
       const updated = await tx.booking.update({
         where: { id: booking.id },
-        data: { scheduledAt: newTime, reservedUntil: null },
+        data: { status: 'CANCELED', reservedUntil: null },
       })
-      await queueBookingNotice(tx, updated, 'rescheduled')
+      await queueBookingNotice(tx, updated, 'canceled')
       return updated
-    },
-    { timeout: 20_000, maxWait: 20_000 },
-  )
+    }
+    if (booking.scheduledAt.getTime() === newTime.getTime()) return booking
+    assertPublicSlot(settings, newTime, booking.durationMin)
+    await assertScheduleAvailable(
+      tx,
+      booking.businessId,
+      newTime,
+      booking.durationMin,
+      excludeFor(booking),
+    )
+    // An approved request remains approved when the customer chooses another available time.
+    if (booking.jobId)
+      await tx.job.update({ where: { id: booking.jobId }, data: { scheduledAt: newTime } })
+    const updated = await tx.booking.update({
+      where: { id: booking.id },
+      data: { scheduledAt: newTime, reservedUntil: null },
+    })
+    await queueBookingNotice(tx, updated, 'rescheduled')
+    return updated
+  }, TX_OPTS)
 }
 
 export async function saveBookingSetup(
@@ -516,46 +511,43 @@ export async function saveBookingSetup(
     throw new Error('Choose a valid timezone')
   }
   const workingHours = parseWorkingHours(input.workingHours)
-  return prisma.$transaction(
-    async (tx) => {
-      await lockBusinessSchedule(tx, businessId)
-      if (data.publish) {
-        if (workingHours.length === 0)
-          throw new Error('Set at least one day of working hours before publishing')
-        const services = await tx.service.count({
-          where: { businessId, active: true, durationMin: { gte: 15 }, category: { not: 'ADDON' } },
-        })
-        if (services === 0)
-          throw new Error('Add an active service with a price and duration before publishing')
-      }
-      await tx.business.update({
-        where: { id: businessId },
-        data: {
-          name: data.name,
-          slug: data.slug,
-          serviceArea: data.serviceArea,
-          status: data.publish ? 'PUBLISHED' : 'DRAFT',
-        },
+  return prisma.$transaction(async (tx) => {
+    await lockBusinessSchedule(tx, businessId)
+    if (data.publish) {
+      if (workingHours.length === 0)
+        throw new Error('Set at least one day of working hours before publishing')
+      const services = await tx.service.count({
+        where: { businessId, active: true, durationMin: { gte: 15 }, category: { not: 'ADDON' } },
       })
-      await tx.settings.update({
-        where: { businessId },
-        data: {
-          businessName: data.name,
-          timezone: data.timezone,
-          bookingMode: data.bookingMode,
-          workingHours: workingHours.map((window) => ({ ...window })),
-          travelBufferMin: data.travelBufferMin,
-          leadTimeMin: data.leadTimeMin,
-          horizonDays: data.horizonDays,
-          cancellationHours: data.cancellationHours,
-          setupComplete: data.publish,
-          phone: data.phone,
-          email: data.email,
-        },
-      })
-    },
-    { timeout: 20_000, maxWait: 20_000 },
-  )
+      if (services === 0)
+        throw new Error('Add an active service with a price and duration before publishing')
+    }
+    await tx.business.update({
+      where: { id: businessId },
+      data: {
+        name: data.name,
+        slug: data.slug,
+        serviceArea: data.serviceArea,
+        status: data.publish ? 'PUBLISHED' : 'DRAFT',
+      },
+    })
+    await tx.settings.update({
+      where: { businessId },
+      data: {
+        businessName: data.name,
+        timezone: data.timezone,
+        bookingMode: data.bookingMode,
+        workingHours: workingHours.map((window) => ({ ...window })),
+        travelBufferMin: data.travelBufferMin,
+        leadTimeMin: data.leadTimeMin,
+        horizonDays: data.horizonDays,
+        cancellationHours: data.cancellationHours,
+        setupComplete: data.publish,
+        phone: data.phone,
+        email: data.email,
+      },
+    })
+  }, TX_OPTS)
 }
 
 export async function createAvailabilityBlock(
@@ -566,14 +558,11 @@ export async function createAvailabilityBlock(
 ) {
   if (!Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start)
     throw new Error('Choose a block ending after it starts')
-  return prisma.$transaction(
-    async (tx) => {
-      await lockBusinessSchedule(tx, businessId)
-      // Existing jobs stay visible; a block is only a restriction on future bookings.
-      return tx.availabilityBlock.create({
-        data: { businessId, startsAt: start, endsAt: end, reason: reason.trim().slice(0, 200) },
-      })
-    },
-    { timeout: 20_000, maxWait: 20_000 },
-  )
+  return prisma.$transaction(async (tx) => {
+    await lockBusinessSchedule(tx, businessId)
+    // Existing jobs stay visible; a block is only a restriction on future bookings.
+    return tx.availabilityBlock.create({
+      data: { businessId, startsAt: start, endsAt: end, reason: reason.trim().slice(0, 200) },
+    })
+  }, TX_OPTS)
 }

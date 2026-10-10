@@ -143,9 +143,14 @@ export async function recordPaymentAction(fd: FormData): Promise<void> {
 export async function clearPaymentAction(fd: FormData): Promise<void> {
   const user = await requireUser()
   const id = fdString(fd, 'id')
-  await clearPayment(user.businessId, id)
+  let error: string | null = null
+  try {
+    await clearPayment(user.businessId, id)
+  } catch (err) {
+    error = friendlyError(err)
+  }
   revalidatePath('/', 'layout')
-  redirect(`/jobs/${id}`)
+  redirect(error ? `/jobs/${id}?error=${encodeURIComponent(error)}` : `/jobs/${id}`)
 }
 
 export async function generateInvoiceAction(fd: FormData): Promise<void> {

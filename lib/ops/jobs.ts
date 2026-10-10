@@ -228,6 +228,10 @@ export async function setJobStatus(
       if (!TRANSITIONS[status].includes(job.status)) {
         throw new Error(`Cannot move a ${job.status.toLowerCase()} job to ${status.toLowerCase()}`)
       }
+      // A paid job keeps its COMPLETED status; the payment has to be cleared deliberately first.
+      if (job.paidAt && status !== 'COMPLETED') {
+        throw new Error('Clear the payment before reopening a paid job')
+      }
       // Only reopening a canceled or no-show job claims its time again; other moves already hold it.
       if (RELEASED.includes(job.status) && !RELEASED.includes(status))
         await assertScheduleAvailable(tx, businessId, job.scheduledAt, job.durationMin, {
@@ -261,22 +265,63 @@ export async function setJobStatus(
   )
 }
 
+/** Largest tip accepted, in cents ($10,000). */
+export const MAX_TIP_CENTS = 1_000_000
+
+/**
+ * Records payment once, on a completed job. Serialized with status changes through the
+ * business schedule lock, and the conditional write fails closed on a double submit.
+ */
 export async function recordPayment(
   businessId: string,
   id: string,
   payment: { method: PaymentMethod; tipCents: number },
 ): Promise<Job> {
-  return prisma.job.update({
-    where: { businessId_id: { businessId, id } },
-    data: { paidAt: new Date(), paymentMethod: payment.method, tipCents: payment.tipCents },
-  })
+  const { tipCents } = payment
+  if (!Number.isInteger(tipCents) || tipCents < 0 || tipCents > MAX_TIP_CENTS) {
+    throw new Error('Enter a tip between $0 and $10,000')
+  }
+  return prisma.$transaction(
+    async (tx) => {
+      await lockBusinessSchedule(tx, businessId)
+      const result = await tx.job.updateMany({
+        where: { businessId, id, paidAt: null, status: 'COMPLETED' },
+        data: { paidAt: new Date(), paymentMethod: payment.method, tipCents },
+      })
+      if (result.count !== 1) {
+        const job = await tx.job.findUnique({
+          where: { businessId_id: { businessId, id } },
+          select: { status: true, paidAt: true },
+        })
+        if (!job) throw new Error('Job not found')
+        if (job.paidAt) throw new Error('This job is already marked paid')
+        throw new Error('Only a completed job can be marked paid')
+      }
+      return tx.job.findUniqueOrThrow({ where: { businessId_id: { businessId, id } } })
+    },
+    { timeout: 20_000 },
+  )
 }
 
 export async function clearPayment(businessId: string, id: string): Promise<Job> {
-  return prisma.job.update({
-    where: { businessId_id: { businessId, id } },
-    data: { paidAt: null, paymentMethod: null, tipCents: 0 },
-  })
+  return prisma.$transaction(
+    async (tx) => {
+      await lockBusinessSchedule(tx, businessId)
+      const result = await tx.job.updateMany({
+        where: { businessId, id, paidAt: { not: null } },
+        data: { paidAt: null, paymentMethod: null, tipCents: 0 },
+      })
+      if (result.count !== 1) {
+        const job = await tx.job.findUnique({
+          where: { businessId_id: { businessId, id } },
+          select: { id: true },
+        })
+        throw new Error(job ? 'This job is not marked paid' : 'Job not found')
+      }
+      return tx.job.findUniqueOrThrow({ where: { businessId_id: { businessId, id } } })
+    },
+    { timeout: 20_000 },
+  )
 }
 
 /**

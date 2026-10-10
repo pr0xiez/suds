@@ -38,6 +38,7 @@ import {
 } from '@/lib/dates'
 import { prisma } from '@/lib/db/client'
 import { formatCents, jobTotalCents } from '@/lib/money'
+import { collectedSince } from '@/lib/ops/revenue'
 import { getSettings } from '@/lib/ops/settings'
 
 export const metadata = { title: 'Dashboard' }
@@ -67,10 +68,7 @@ export default async function DashboardPage() {
       include: { customer: true, vehicle: true, items: true },
       orderBy: { scheduledAt: 'asc' },
     }),
-    prisma.job.findMany({
-      where: { businessId: user.businessId, paidAt: { gte: monthStart } },
-      include: { items: true },
-    }),
+    collectedSince(user.businessId, monthStart),
     prisma.job.findMany({
       where: { businessId: user.businessId, status: 'COMPLETED', paidAt: null },
       include: { customer: true, items: true },
@@ -95,16 +93,16 @@ export default async function DashboardPage() {
       orderBy: { completedAt: 'desc' },
       take: 5,
     }),
-    prisma.business.findUniqueOrThrow({ where: { id: user.businessId } }),
+    prisma.business.findUniqueOrThrow({
+      where: { id: user.businessId },
+      select: { status: true },
+    }),
     prisma.booking.count({ where: { businessId: user.businessId, status: 'PENDING' } }),
   ])
 
   const activeToday = todayJobs.filter((job) => job.status !== 'CANCELED')
   const todayValue = activeToday.reduce((sum, job) => sum + jobTotalCents(job), 0)
-  const monthRevenue = paidThisMonth.reduce(
-    (sum, job) => sum + jobTotalCents(job) + job.tipCents,
-    0,
-  )
+  const monthRevenue = paidThisMonth.cents
   const unpaidTotal = unpaid.reduce((sum, job) => sum + jobTotalCents(job), 0)
   const overduePosts = queuedPosts.filter(
     (post) => post.scheduledFor !== null && post.scheduledFor < now,
@@ -173,7 +171,7 @@ export default async function DashboardPage() {
           className="bg-surface"
           label="Collected this month"
           value={formatCents(monthRevenue)}
-          detail={`${paidThisMonth.length} paid job${paidThisMonth.length === 1 ? '' : 's'}`}
+          detail={`${paidThisMonth.count} paid job${paidThisMonth.count === 1 ? '' : 's'}`}
           href="/jobs?when=past"
         />
         <StatTile

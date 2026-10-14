@@ -30,7 +30,7 @@ All provider and storage credentials are server-only; `.env.example` lists names
 `.vercel/` and `.backups/` are private deployment/operator artifacts, ignored by
 git, lint, TypeScript, and CLI uploads. Keep their contents out of logs.
 
-GitHub: private `pr0xiez/suds`, branch `main`. Existing Vercel project: `suds`
+GitHub: `pr0xiez/suds`, branch `main`. Existing Vercel project: `suds`
 under `hall3aducgmailcoms-projects`, Node 24, region `iad1`. `vercel.json` schedules
 the authenticated worker every minute on the existing Pro plan. Apply database
 migrations separately; builds generate Prisma but never migrate or seed.

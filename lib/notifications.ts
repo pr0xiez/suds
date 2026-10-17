@@ -1,6 +1,7 @@
 import { lockBusinessSchedule } from '@/lib/bookingSchedule'
 import { prisma } from '@/lib/db/client'
 import type { Prisma } from '@/lib/generated/prisma/client'
+import { kickWorker } from '@/lib/workers/kick'
 
 export interface EmailInput {
   businessId?: string | null
@@ -11,8 +12,12 @@ export interface EmailInput {
   availableAt?: Date
 }
 
-/** Insert in the same transaction as the business event. Sending happens in the worker. */
+/**
+ * Insert in the same transaction as the business event. Sending happens in the worker,
+ * which is kicked once this request's response is sent (after the transaction commits).
+ */
 export async function queueEmail(tx: Prisma.TransactionClient, input: EmailInput) {
+  kickWorker()
   return tx.notificationOutbox.upsert({
     where: { dedupeKey: input.dedupeKey },
     update: {},

@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db/client'
 import { userFacingError } from '@/lib/forms'
 import { sameOriginOk } from '@/lib/http'
 import { readMediaJson } from '@/lib/media/api'
+import { kickIfAnyDue } from '@/lib/workers/kick'
 export const runtime = 'nodejs'
 const json = (data: unknown, status = 200) =>
   NextResponse.json(data, { status, headers: { 'Cache-Control': 'private, no-store' } })
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
     const run = await prisma.aiRun.findFirst({
       where: { id, businessId: user.businessId, kind: { in: ['VIDEO', 'PHOTOS'] } },
     })
+    if (run) kickIfAnyDue([run])
     return run ? json(presentRun(run)) : json({ error: 'Edit not found.' }, 404)
   }
   const runs = await prisma.aiRun.findMany({
@@ -45,5 +47,7 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'desc' },
     take: 20,
   })
+  // The editor polls while a render is in flight; nudge the worker when a step is due.
+  kickIfAnyDue(runs)
   return json({ runs: runs.map(presentRun) })
 }

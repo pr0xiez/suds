@@ -21,8 +21,9 @@ artifacts. The fictional local demo stays separate and retains its demo logins.
 Production and preview database connections, public origin, pilot invitation
 code, and worker secret are configured in Vercel. Standard deployment protection
 keeps previews protected while the stable production domain is public. Node 24
-and `iad1` align the web functions with the existing Neon region. The Pro plan
-supports the every-minute cron in `vercel.json`; builds never apply migrations.
+and `iad1` align the web functions with the existing Neon region. Background work is
+kicked when it is queued, and `vercel.json` runs an hourly sweep for reminders and
+retries, so Neon scales to zero while idle; builds never apply migrations.
 
 Cloudflare R2 Standard is selected for media. The authenticated Cloudflare account
 is `alex@ahall.tech`; R2 is enabled and private production/preview buckets are
@@ -104,17 +105,20 @@ applying `npm run db:deploy` to an existing environment.
 
 The Dockerfile builds a Node 24 web image. Supply runtime secrets through the
 hosting platform; `.dockerignore` excludes local envs and media. Run the same
-image as a worker with command `npm run worker:loop`, or schedule an authenticated
-GET/POST to `/api/internal/worker` at least once per minute. Do not run both
-unless intentionally sizing concurrency; atomic claims still protect jobs.
+image as a worker with command `npm run worker:loop`, or rely on the in-process
+kick after each enqueue plus a scheduled authenticated GET to `/api/internal/worker`
+(hourly is enough for 24-hour reminders). Running both is safe; atomic claims
+protect jobs.
 The web process starts with `npm start` on port 3000. Use a HTTPS reverse proxy.
 
 A Next.js host such as Vercel can serve the web app using private object storage.
-For background work choose a separate persistent worker or a scheduler with
-sufficient duration and frequency; heavy uploads must use the direct-upload path.
-Do not depend on a function's local filesystem or a request staying alive after
-its response. The worker endpoint declares a five-minute limit; host limits may
-be lower and must be verified before choosing the schedule.
+On Vercel, enqueueing code calls `kickWorker()`: after the response it POSTs to
+`/api/internal/worker` with CRON_SECRET, and that route acknowledges at once and
+drains in `after()` under its five-minute limit, sleeping only for work due within
+that window. A kick is a nudge, not the record: rows stay in the queues and the
+hourly cron sweep picks up anything a lost kick missed. Previews never run
+background work. Heavy uploads must use the direct-upload path. Do not depend on a
+function's local filesystem.
 
 Apply migrations as a distinct release step with unpooled DIRECT_URL. Then start
 the compatible app/worker version and verify health, signup/verification, owner

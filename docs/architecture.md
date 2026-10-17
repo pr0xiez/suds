@@ -9,8 +9,9 @@ diagrams live in [CONTEXT.md](../CONTEXT.md); module ownership is in
 
 One Next.js 16 app on Vercel serves three audiences. Postgres is the only system
 of record. Requests only enqueue work; paid providers and email are called from
-`runBackgroundWork()`, never while a page renders. The Vercel cron route and the
-optional long-running loop share that code and can run together.
+`runBackgroundWork()`, never while a page renders. Queueing work kicks the worker
+route right after the response; an hourly cron sweep covers reminders and retries.
+Both, and the optional long-running loop, share that code and can run together.
 
 ```mermaid
 flowchart LR
@@ -20,7 +21,7 @@ flowchart LR
 
   subgraph vercel["Vercel — project suds, iad1, Node 24"]
     app["Next.js 16 app<br/>pages · server actions · route handlers"]
-    cron["Vercel Cron<br/>every minute"]
+    cron["Vercel Cron<br/>hourly sweep"]
   end
 
   loop["Optional persistent worker<br/>npm run worker:loop"]
@@ -43,7 +44,8 @@ flowchart LR
   visitor -->|"/b/:slug profile + open slots"| app
   owner -.->|"direct PUT, signed URL"| r2
 
-  cron -->|"Bearer CRON_SECRET<br/>/api/internal/worker"| app
+  cron -->|"Bearer CRON_SECRET<br/>GET /api/internal/worker"| app
+  app -.->|"kick after enqueue<br/>POST /api/internal/worker"| app
   app --> bg
   loop --> bg
   app --> neon
@@ -256,7 +258,7 @@ sequenceDiagram
   end
   O->>DB: insert NotificationOutbox row
   O->>DB: COMMIT
-  Note over W,DB: Later: cron tick or worker loop
+  Note over W,DB: After the response: kick drains the queue (reminders: hourly sweep)
   W->>DB: claim outbox row (FOR UPDATE SKIP LOCKED)
   W->>DB: recheck appointment under the same lock
   W->>E: send with idempotency key
@@ -295,8 +297,10 @@ sequenceDiagram
 ## Background work
 
 `AiRun` and `NotificationOutbox` are durable Postgres queues. Each tick claims
-rows with `FOR UPDATE SKIP LOCKED` and a lease, so the cron route and a
-persistent worker can run at the same time without double-processing.
+rows with `FOR UPDATE SKIP LOCKED` and a lease, so kicks, the hourly sweep, and a
+persistent worker can run at the same time without double-processing. A drain
+ticks while work is due within its five-minute window (render status checks every
+30 to 60 seconds, short retries) and then exits, leaving the database idle.
 
 ```mermaid
 stateDiagram-v2

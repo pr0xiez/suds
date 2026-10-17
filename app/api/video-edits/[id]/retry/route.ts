@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { getBusinessSessionUser } from '@/lib/auth/session'
 import { prisma } from '@/lib/db/client'
 import { sameOriginOk } from '@/lib/http'
+import { kickWorker } from '@/lib/workers/kick'
 /** A known provider receipt resumes only status/download; this never submits another paid edit. */
 export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string }> }) {
   const user = await getBusinessSessionUser()
@@ -24,6 +25,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
       nextAttemptAt: new Date(),
     },
   })
+  if (changed.count) kickWorker()
   return changed.count
     ? NextResponse.json({ resumed: true })
     : NextResponse.json(

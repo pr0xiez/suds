@@ -23,8 +23,8 @@ import {
   MAX_VIDEO_BYTES,
   type VideoProject,
 } from '@/lib/videoEditing'
+import { AI_LEASE_MS as LEASE_MS } from './lease'
 
-const LEASE_MS = 300_000
 async function claimRun() {
   await prisma.aiRun.updateMany({
     where: {
@@ -280,7 +280,7 @@ export async function cleanupExpiredUploads(limit = 20) {
       await prisma.mediaUpload.deleteMany({ where: { id: upload.id, status: upload.status } })
       removed++
     } catch {
-      /* Later cron retries cleanup. */
+      /* The next sweep retries cleanup. */
     }
   }
   return removed

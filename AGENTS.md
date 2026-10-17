@@ -31,9 +31,12 @@ All provider and storage credentials are server-only; `.env.example` lists names
 git, lint, TypeScript, and CLI uploads. Keep their contents out of logs.
 
 GitHub: `pr0xiez/suds`, branch `main`. Existing Vercel project: `suds`
-under `hall3aducgmailcoms-projects`, Node 24, region `iad1`. `vercel.json` schedules
-the authenticated worker every minute on the existing Pro plan. Apply database
-migrations separately; builds generate Prisma but never migrate or seed.
+under `hall3aducgmailcoms-projects`, Node 24, region `iad1`. The worker is not polled:
+queueing work (`queueEmail`, AI run enqueue/retry, a due run seen by status polling)
+calls `kickWorker()`, which POSTs to the worker after the response; it drains what is due
+within five minutes and stops so Neon can scale to zero. `vercel.json` keeps an hourly
+sweep for reminders, long retry backoff, and cleanup. Apply database migrations
+separately; builds generate Prisma but never migrate or seed.
 
 ## Commands
 
@@ -86,7 +89,8 @@ must preserve existing IDs, jobs, payments, invoices, and photo relationships.
   directly from the browser to private storage.
 - `app/api/marketing`, `ai-runs`, `video-edits`: owner-scoped persisted jobs,
   review, polling, and retained output access.
-- `app/api/internal/worker`: authenticated tick; `app/api/health`: DB health.
+- `app/api/internal/worker`: authenticated drain (GET hourly sweep, POST kick);
+  `app/api/health`: DB health.
 - `lib/auth`: scrypt, hashed DB sessions, one-use account tokens, persistent
   throttling. `lib/business.ts` resolves accepted active memberships.
 - `lib/ops`: domain behavior shared by actions and smoke scripts. Existing
@@ -99,7 +103,8 @@ must preserve existing IDs, jobs, payments, invoices, and photo relationships.
   booking change test.
 - `lib/media/uploads.ts`, `storage.ts`: private R2/S3 uploads and validation.
   `uploads.ts` preserves legacy local-file access for development/migration.
-- `lib/ai`: marketing context/provider/quotas; `lib/workers`: leased AI dispatch;
+- `lib/ai`: marketing context/provider/quotas; `lib/workers`: leased AI dispatch,
+  `drain.ts` (tick until nothing is due soon), `kick.ts` (wake the worker on enqueue);
   `lib/notifications.ts`: transactional outbox and delivery.
 - `lib/readiness.ts`, `observability.ts`, `instrumentation.ts`: setup diagnostics
   and structured failure logs without customer data or secret values.

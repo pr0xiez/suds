@@ -10,6 +10,7 @@ import type { AiRun, Prisma } from '@/lib/generated/prisma/client'
 import { photoShortsConfigured } from '@/lib/ops/photoShorts'
 import { durableStorageConfigured, privateObjectUrl } from '@/lib/storage'
 import { VIDEO_STYLES, videoEditingConfigured } from '@/lib/videoEditing'
+import { kickIfAnyDue } from '@/lib/workers/kick'
 export const videoRunBrief = z.object({
   mode: z.enum(['video', 'photos']),
   title: z.string().trim().min(1).max(100),
@@ -31,7 +32,7 @@ async function enqueue(
   request: Prisma.InputJsonValue,
   idempotencyKey: string,
 ) {
-  return prisma.$transaction(
+  const run = await prisma.$transaction(
     async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ai-quota:${businessId}`}))`
       if (kind === 'VIDEO') {
@@ -82,6 +83,8 @@ async function enqueue(
     },
     { timeout: 20_000 },
   )
+  kickIfAnyDue([run])
+  return run
 }
 export async function enqueueMarketing(businessId: string, userId: string, input: unknown) {
   if (!marketingConfigured()) throw new Error('The Suds marketing assistant is not connected yet.')

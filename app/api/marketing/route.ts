@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db/client'
 import { userFacingError } from '@/lib/forms'
 import { sameOriginOk } from '@/lib/http'
 import { readMediaJson } from '@/lib/media/api'
+import { kickIfAnyDue } from '@/lib/workers/kick'
 export const runtime = 'nodejs'
 const json = (data: unknown, status = 200) =>
   NextResponse.json(data, { status, headers: { 'Cache-Control': 'private, no-store' } })
@@ -39,6 +40,8 @@ export async function GET(req: NextRequest) {
     orderBy: { createdAt: 'desc' },
     take: id ? 1 : 20,
   })
+  // The assistant polls while a draft is queued; nudge the worker when one is due.
+  kickIfAnyDue(runs)
   return id
     ? runs[0]
       ? json(presentRun(runs[0]))

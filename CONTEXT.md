@@ -153,8 +153,9 @@ stale reminders; dispatch rechecks the appointment under the calendar lock, then
 releases it before calling the provider so a slow provider never stalls booking.
 A change during the send queues its own notice. No email is sent by page rendering. Promotional communication is separate scope.
 
-Run one persistent worker or invoke `/api/internal/worker` regularly using a
-Bearer CRON_SECRET of at least 32 characters. `/api/health` checks the database;
+Enqueueing kicks `/api/internal/worker` (Bearer CRON_SECRET, at least 32
+characters) right after the response, and a scheduled sweep catches reminders and
+anything a kick missed; a persistent worker loop also works. `/api/health` checks the database;
 it is not evidence that external providers are connected. Preflight checks
 configuration presence without revealing values. Structured logs omit customer
 payloads, addresses, media URLs, and credentials. See the launch runbook for
